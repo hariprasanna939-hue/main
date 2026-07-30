@@ -4,6 +4,7 @@ import { API_BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
+  ArrowUp,
   Award,
   BarChart3,
   Building2,
@@ -17,8 +18,9 @@ import {
   Users,
   X,
   Zap,
+  Menu,
 } from "lucide-react";
-import { motion, useScroll, useMotionValueEvent } from "framer-motion";
+import { motion, useScroll, useMotionValueEvent, AnimatePresence } from "framer-motion";
 import HeroSection from "@/components/HeroSection";
 import FirstSection from "@/components/FirstSection";
 import SecondSection from "@/components/SecondSection";
@@ -30,6 +32,8 @@ import SeventhSection from "@/components/SeventhSection";
 import FaqSection from "@/components/FaqSection";
 import EighthSection from "@/components/EighthSection";
 import Footer from "@/components/Footer";
+import Header from "@/components/Header";
+import { TrialFormModal } from "@/components/TrialFormModal";
 
 type Stat = {
   icon: JSX.Element;
@@ -60,6 +64,27 @@ const Index = () => {
 
   const { scrollY } = useScroll();
   const [hidden, setHidden] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 400) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth"
+    });
+  };
 
   useMotionValueEvent(scrollY, "change", (latest) => {
     const previous = scrollY.getPrevious() || 0;
@@ -170,56 +195,20 @@ const Index = () => {
         </motion.div>
       )}
 
-      <motion.header
-        variants={{
-          visible: { y: 0, opacity: 1 },
-          hidden: { y: -100, opacity: 0 }
-        }}
-        animate={hidden ? "hidden" : "visible"}
-        transition={{ duration: 0.3, ease: "easeInOut" }}
-        className="fixed inset-x-0 top-4 z-50 mx-auto max-w-6xl px-4 sm:px-6"
-      >
-        <div className="flex items-center justify-between rounded-2xl border border-white/40 bg-white/60 px-4 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-          <motion.div
-            initial={{ opacity: 0, x: -16 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2.5"
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-slate-900">AIBASS</span>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              onClick={() => navigate("/auth")}
-              className="hidden h-10 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100/50 hover:text-slate-900 sm:flex"
-            >
-              Log In
-            </Button>
-            <Button
-              onClick={() => navigate("/auth?tab=signup")}
-              className="h-10 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-md transition-transform hover:-translate-y-0.5 hover:bg-slate-800"
-            >
-              Get Started
-            </Button>
-          </motion.div>
-        </div>
-      </motion.header>
+      <Header />
+      <TrialFormModal />
 
       <main className="relative mx-auto max-w-7xl px-5 sm:px-6">
-        <HeroSection onWatchDemo={() => setShowDemo(true)} />
+        <HeroSection onWatchDemo={() => window.dispatchEvent(new CustomEvent("openTrialModal"))} />
       </main>
 
       {/* Full-width First Section */}
-      <div className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12">
-        <FirstSection onWatchDemo={() => setShowDemo(true)} />
+      <div className="relative mx-auto max-w-[1380px] w-full px-4 sm:px-8 lg:px-12">
+        <FirstSection onWatchDemo={() => window.dispatchEvent(new CustomEvent("openTrialModal"))} />
       </div>
 
       {/* Full-width Third Section */}
-      <div className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-2">
+      <div id="features" className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-2">
         <ThirdSection />
       </div>
 
@@ -229,22 +218,22 @@ const Index = () => {
       </div>
 
       {/* Full-width Fourth Section */}
-      <div className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
+      <div id="how-it-works" className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
         <FourthSection />
       </div>
 
       {/* Full-width Fifth Section */}
-      <div className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
+      <div id="business" className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
         <FifthSection />
       </div>
 
       {/* Full-width Sixth Section */}
-      <div className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
+      <div id="why-choose" className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
         <SixthSection />
       </div>
 
       {/* Full-width Seventh Section */}
-      <div className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
+      <div id="pricing" className="relative mx-auto max-w-7xl w-full px-4 sm:px-8 lg:px-12 mt-12">
         <SeventhSection />
       </div>
 
@@ -259,6 +248,22 @@ const Index = () => {
       </div>
 
       <Footer />
+
+      {/* Floating Scroll to Top Button */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 10 }}
+            onClick={scrollToTop}
+            className="fixed bottom-6 right-6 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-slate-950 border border-slate-800 text-white shadow-xl hover:bg-slate-850 hover:scale-105 active:scale-95 transition-all"
+            aria-label="Scroll to top"
+          >
+            <ArrowUp className="h-5 w-5" />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

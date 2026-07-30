@@ -60,10 +60,7 @@ const FifthSection = () => {
         transition={{ duration: 0.6 }}
         className="mx-auto mb-12 max-w-3xl text-center"
       >
-        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
-          Target Audience
-        </span>
-        <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl lg:text-[40px] lg:leading-[1.15]">
+        <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl lg:text-[40px] lg:leading-[1.15]">
           AI Accounting Software for{" "}
           <span className="bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
             Different Businesses
@@ -117,9 +114,6 @@ const FifthSection = () => {
             transition={{ duration: 0.4 }}
             className="relative rounded-3xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_40px_rgba(15,23,42,0.05)] sm:p-8 md:p-10"
           >
-            {/* Top Border Glow Color */}
-            <div className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-3xl bg-gradient-to-r ${current.accent}`} />
-
             {/* Content header */}
             <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <span className="inline-block rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">

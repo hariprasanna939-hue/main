@@ -1,7 +1,19 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Sparkles, Mic, PlayCircle, BarChart3, Receipt, Package, Calculator } from "lucide-react";
+import { ArrowRight, Sparkles, Mic, BarChart3, Receipt, Package, Calculator } from "lucide-react";
 import { motion } from "framer-motion";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 interface HeroSectionProps {
   onWatchDemo: () => void;
@@ -9,6 +21,64 @@ interface HeroSectionProps {
 
 const HeroSection = ({ onWatchDemo }: HeroSectionProps) => {
   const navigate = useNavigate();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    description: "",
+  });
+  const [errors, setErrors] = useState({
+    email: "",
+    phone: "",
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    let isValid = true;
+    const newErrors = { email: "", phone: "" };
+
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      newErrors.email = "Please enter a valid email address.";
+      isValid = false;
+    }
+
+    // Validate phone number (must have at least 10 digits, allow optional '+', spaces, hyphens, and parentheses)
+    const phoneRegex = /^\+?[0-9\s\-()]{10,20}$/;
+    const digitsOnly = formData.phone.replace(/\D/g, "");
+    if (!phoneRegex.test(formData.phone) || digitsOnly.length < 10) {
+      newErrors.phone = "Please enter a valid phone number (at least 10 digits).";
+      isValid = false;
+    }
+
+    if (!isValid) {
+      setErrors(newErrors);
+      return;
+    }
+
+    toast.success("Your 30-day free trial request has been submitted successfully!");
+    setIsDialogOpen(false);
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      description: "",
+    });
+    setErrors({
+      email: "",
+      phone: "",
+    });
+  };
+
+  const handleOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      setErrors({ email: "", phone: "" });
+    }
+  };
 
   const heroSignals = [
     { label: "Voice Command", value: "Active", icon: Mic },
@@ -53,24 +123,14 @@ const HeroSection = ({ onWatchDemo }: HeroSectionProps) => {
         <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
           <Button
             size="default"
-            onClick={() => navigate("/auth?tab=signup")}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="group relative h-12 overflow-hidden rounded-full bg-slate-950 px-6 text-sm font-semibold text-white shadow-[0_18px_42px_rgba(15,23,42,0.26)] transition-all duration-300 hover:-translate-y-1 hover:bg-slate-800 hover:shadow-[0_24px_54px_rgba(15,23,42,0.36)]"
           >
             <span className="relative z-10 flex items-center">
-              Book a Free Demo
+              Get your 30 days free trial
               <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
             </span>
             <div className="absolute inset-0 z-0 bg-gradient-to-r from-sky-600/20 to-indigo-600/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-          </Button>
-          
-          <Button
-            size="default"
-            variant="outline"
-            onClick={onWatchDemo}
-            className="group h-12 rounded-full border-slate-200 bg-white/50 px-6 text-sm font-semibold text-slate-900 shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:bg-white/80 hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)]"
-          >
-            <PlayCircle className="mr-2 h-4 w-4 text-sky-600 transition-transform duration-300 group-hover:scale-110" />
-            See How It Works
           </Button>
         </div>
 
@@ -207,6 +267,89 @@ const HeroSection = ({ onWatchDemo }: HeroSectionProps) => {
           ))}
         </div>
       </motion.div>
+
+      <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
+        <DialogContent className="sm:max-w-[425px] rounded-3xl bg-white/95 backdrop-blur-xl border-slate-200/50 shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
+              Start Your 30-Day Free Trial
+            </DialogTitle>
+            <DialogDescription className="text-slate-600 font-medium mt-1">
+              Fill out the details below, and our team will get you set up with your free trial account immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-xs font-bold uppercase tracking-wider text-slate-500">Full Name</Label>
+              <Input
+                id="name"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="John Doe"
+                className="h-11 rounded-xl border-slate-200 bg-white/50 focus:border-sky-500 focus:ring-sky-500"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-slate-500">Email Address</Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                value={formData.email}
+                onChange={(e) => {
+                  setFormData({ ...formData, email: e.target.value });
+                  if (errors.email) setErrors({ ...errors, email: "" });
+                }}
+                placeholder="john@example.com"
+                className={`h-11 rounded-xl bg-white/50 focus:border-sky-500 focus:ring-sky-500 ${
+                  errors.email ? "border-red-500 focus:border-red-500 focus:ring-red-500" : "border-slate-200"
+                }`}
+              />
+              {errors.email && (
+                <p className="text-xs font-medium text-red-500 mt-1">{errors.email}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone" className="text-xs font-bold uppercase tracking-wider text-slate-500">Phone Number</Label>
+              <Input
+                id="phone"
+                type="tel"
+                required
+                value={formData.phone}
+                onChange={(e) => {
+                  setFormData({ ...formData, phone: e.target.value });
+                  if (errors.phone) setErrors({ ...errors, phone: "" });
+                }}
+                placeholder="+1 (555) 000-0000"
+                className={`h-11 rounded-xl bg-white/50 focus:border-sky-500 focus:ring-sky-500 ${
+                  errors.phone ? "border-red-500 focus:border-red-500 focus:ring-red-500" : "border-slate-200"
+                }`}
+              />
+              {errors.phone && (
+                <p className="text-xs font-medium text-red-500 mt-1">{errors.phone}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-xs font-bold uppercase tracking-wider text-slate-500">Business Description</Label>
+              <Textarea
+                id="description"
+                required
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Tell us a bit about your business and accounting needs..."
+                className="min-h-[100px] rounded-xl border-slate-200 bg-white/50 focus:border-sky-500 focus:ring-sky-500"
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full h-11 mt-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 font-semibold text-white shadow-lg hover:from-sky-500 hover:to-indigo-500 transition-all duration-300"
+            >
+              Get Started Now
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 };

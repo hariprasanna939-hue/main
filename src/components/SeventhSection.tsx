@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Check, Calendar, ArrowRight, Loader2, Sparkles, Building, Landmark, Rocket, Store, Briefcase, Zap, Crown, Infinity, CheckCircle2 } from "lucide-react";
+import { Check, Calendar, ArrowRight, Loader2, Sparkles, Building, Landmark, Rocket, Store, Briefcase, Zap, Crown, Infinity, CheckCircle2, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const pricingTiers = [
@@ -141,10 +141,7 @@ const SeventhSection = () => {
           transition={{ duration: 0.6 }}
           className="mx-auto max-w-3xl text-center"
         >
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
-            Pricing
-          </span>
-          <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl lg:text-[40px] lg:leading-[1.15]">
+          <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl lg:text-[40px] lg:leading-[1.15]">
             Choose a plan that feels as{" "}
             <span className="bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
               clear as the interface.
@@ -202,12 +199,7 @@ const SeventhSection = () => {
 
                 {/* Button / CTA */}
                 <Button
-                  onClick={() => {
-                    toast({
-                      title: `Selected ${tier.name}`,
-                      description: "Book a demo to proceed with account setup.",
-                    });
-                  }}
+                  onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                   className="w-full h-11 rounded-xl font-bold text-xs bg-slate-950 text-white hover:bg-slate-850 shadow-sm border border-slate-950 transition-colors mb-6"
                 >
                   {tier.cta}
@@ -239,38 +231,36 @@ const SeventhSection = () => {
       </div>
 
       {/* ─── Demo Booking Form Block ─── */}
-      <div className="rounded-3xl border border-slate-200/60 bg-white p-6 sm:p-8 md:p-12 shadow-[0_12px_45px_rgba(15,23,42,0.06)]">
+      <div className="rounded-[40px] border border-slate-100 bg-white p-8 sm:p-10 md:p-14 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
         <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-center">
           {/* Form Description */}
           <div className="space-y-6">
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
-              Personalized Demo
-            </span>
-            <h2 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">
+            <h2 className="text-4xl font-extrabold tracking-tight text-[#0B0F19] md:text-5xl leading-tight">
               See AIBASS in Action
             </h2>
-            <p className="text-sm font-semibold leading-relaxed text-slate-600 sm:text-base">
+            <p className="text-[15px] font-medium leading-relaxed text-slate-600">
               Book a personalised demonstration and explore how AIBASS manages voice and text commands, invoicing, GST,
               inventory, financial reporting and cash-flow predictions.
             </p>
 
             {/* Micro value props */}
-            <div className="space-y-3 pt-4 border-t border-slate-100">
+            <div className="space-y-4 pt-6 border-t border-slate-100/70">
               {[
                 "15-minute quick walkthrough of all features",
                 "Learn how voice and text commands optimize workflows",
                 "Answers to your customized GST and stock questions",
               ].map((val) => (
-                <div key={val} className="flex items-center gap-3">
-                  <Check className="h-4 w-4 shrink-0 text-sky-600" />
-                  <p className="text-xs font-bold text-slate-700">{val}</p>
+                <div key={val} className="flex items-start gap-3">
+                  <Check className="h-4 w-4 shrink-0 text-[#0EA5E9] stroke-[3] mt-0.5" />
+                  <p className="text-xs font-bold text-slate-800">{val}</p>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Booking Form Card */}
-          <div className="relative">
+          <div className="relative bg-[#E2E8F0] rounded-3xl p-6 sm:p-8 border border-slate-350 shadow-[0_15px_40px_rgba(15,23,42,0.04)] max-w-md mx-auto w-full">
+            <h3 className="text-2xl font-bold text-center text-slate-900 mb-8">Book a free demo</h3>
             <AnimatePresence mode="wait">
               {!submitted ? (
                 <motion.form
@@ -279,87 +269,74 @@ const SeventhSection = () => {
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -15 }}
-                  className="space-y-4"
+                  className="space-y-6"
                 >
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-750 uppercase tracking-wider">Name</label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="Ravi Kumar"
-                        className="w-full h-11 rounded-xl border border-slate-200/80 bg-slate-50 px-4 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:border-slate-900 focus:bg-white focus:outline-none transition-colors"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-750 uppercase tracking-wider">Business Name</label>
-                      <input
-                        type="text"
-                        value={formData.businessName}
-                        onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
-                        placeholder="Ravi Traders"
-                        className="w-full h-11 rounded-xl border border-slate-200/80 bg-slate-50 px-4 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:border-slate-900 focus:bg-white focus:outline-none transition-colors"
-                        required
-                      />
-                    </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="Name"
+                      className="w-full bg-transparent border-b border-slate-300 py-3 text-sm text-slate-850 placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-colors"
+                      required
+                    />
                   </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-750 uppercase tracking-wider">Work Email</label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        placeholder="ravi@traders.com"
-                        className="w-full h-11 rounded-xl border border-slate-200/80 bg-slate-50 px-4 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:border-slate-900 focus:bg-white focus:outline-none transition-colors"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-750 uppercase tracking-wider">Phone Number</label>
-                      <input
-                        type="tel"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        placeholder="+91 98765 43210"
-                        className="w-full h-11 rounded-xl border border-slate-200/80 bg-slate-50 px-4 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:border-slate-900 focus:bg-white focus:outline-none transition-colors"
-                        required
-                      />
-                    </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={formData.businessName}
+                      onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
+                      placeholder="Business Name"
+                      className="w-full bg-transparent border-b border-slate-300 py-3 text-sm text-slate-850 placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-colors"
+                      required
+                    />
                   </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-750 uppercase tracking-wider">Business Type</label>
+                  <div>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="Work Email"
+                      className="w-full bg-transparent border-b border-slate-300 py-3 text-sm text-slate-850 placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-colors"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="Phone Number"
+                      className="w-full bg-transparent border-b border-slate-300 py-3 text-sm text-slate-850 placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-colors"
+                      required
+                    />
+                  </div>
+                  <div className="relative">
                     <select
                       value={formData.businessType}
                       onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
-                      className="w-full h-11 rounded-xl border border-slate-200/80 bg-slate-50 px-4 text-xs font-semibold text-slate-700 focus:border-slate-900 focus:bg-white focus:outline-none transition-colors"
+                      className="w-full bg-transparent border-b border-slate-300 py-3 text-sm text-slate-750 focus:border-indigo-500 focus:outline-none transition-colors appearance-none cursor-pointer"
                     >
                       <option value="small_business">Small Business / Service</option>
                       <option value="startup">Startup / Tech</option>
                       <option value="retail">Retailer / Trader</option>
                       <option value="sme">SME / Manufacturing</option>
                     </select>
+                    <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
 
                   <Button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-12 mt-4 rounded-full bg-slate-950 text-white font-bold hover:bg-slate-850 flex items-center justify-center gap-2"
+                    className="w-full h-12 mt-8 rounded-md bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6] text-white font-semibold hover:opacity-90 transition-opacity flex items-center justify-center shadow-md border-0"
                   >
                     {loading ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Scheduling...
+                        <Loader2 className="h-4 w-4 animate-spin text-white" />
+                        <span className="ml-2">Submitting...</span>
                       </>
                     ) : (
-                      <>
-                        Book My Free Demo
-                        <ArrowRight className="h-4 w-4" />
-                      </>
+                      "Submit"
                     )}
                   </Button>
                 </motion.form>
@@ -368,13 +345,13 @@ const SeventhSection = () => {
                   key="success-card"
                   initial={{ opacity: 0, scale: 0.94 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-8 text-center space-y-4"
+                  className="p-4 text-center space-y-4"
                 >
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                     <Calendar className="h-7 w-7" />
                   </div>
                   <h3 className="text-xl font-bold text-slate-900">Demo Scheduled Successfully!</h3>
-                  <p className="text-xs font-semibold leading-relaxed text-slate-600 max-w-sm mx-auto">
+                  <p className="text-xs font-semibold leading-relaxed text-slate-650 max-w-sm mx-auto">
                     Thanks for reaching out! We've received your request for **{formData.businessName}**. An AIBASS specialist will email you shortly at **{formData.email}** with a demo link.
                   </p>
                   <Button

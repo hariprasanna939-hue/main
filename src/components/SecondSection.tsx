@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, Terminal, MessageSquare, Sparkles, CheckCircle2, PlayCircle, AlertCircle } from "lucide-react";
+import { Mic, Terminal, MessageSquare, Sparkles, CheckCircle2, PlayCircle, AlertCircle, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const textDemoSteps = [
   {
@@ -121,34 +122,43 @@ const SecondSection = () => {
 
   return (
     <section id="solutions" className="py-20 lg:py-12">
-      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.6 }}
-        className="mx-auto mb-16 max-w-4xl text-center"
+        className="mx-auto mb-16 max-w-5xl rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-8 sm:p-10 md:p-12 flex flex-col md:flex-row md:items-center justify-between gap-8 shadow-md text-left relative overflow-hidden"
       >
-        <div className="mb-4 flex justify-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
-            <Sparkles className="h-3.5 w-3.5 text-sky-600" />
-            Meet AIBASS
-          </span>
+        {/* Soft background glows */}
+        <div className="absolute -top-24 -right-24 w-72 h-72 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-sky-500/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-3xl space-y-3 relative z-10">
+          <h2 className="text-2xl sm:text-3xl md:text-[32px] font-bold tracking-tight text-slate-950 leading-tight">
+            One AI Accounting Platform for{" "}
+            <span className="bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
+              Everyday Business Finance
+            </span>
+          </h2>
+          <p className="text-sm sm:text-base font-medium leading-relaxed text-slate-650">
+            AIBASS is an AI accounting software for Indian businesses that helps manage invoicing, GST, inventory,
+            bookkeeping, financial reports and cash flow insights through simple text or voice commands.
+          </p>
         </div>
-        <h2 className="text-balance text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl lg:text-[42px] lg:leading-[1.15]">
-          One AI Accounting Platform for{" "}
-          <span className="bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
-            Everyday Business Finance
-          </span>
-        </h2>
-        <p className="mx-auto mt-4 max-w-3xl text-sm font-medium leading-relaxed text-slate-600 sm:text-base">
-          AIBASS is an AI accounting software for Indian businesses that helps manage invoicing, GST, inventory,
-          bookkeeping, financial reports and cash flow insights through simple text or voice commands.
-        </p>
+
+        <div className="relative z-10 shrink-0">
+          <Button
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-bold text-white shadow-md hover:bg-slate-800 hover:scale-105 active:scale-95 transition-all duration-200 h-auto"
+          >
+            Book a Free Demo
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
       </motion.div>
 
       {/* Main Subheading */}
-      <div className="mb-10 text-center">
+      <div className="mb-10 text-center max-w-5xl mx-auto">
         <h3 className="text-2xl font-bold text-slate-950 sm:text-3xl">Tell AIBASS What You Need</h3>
         <p className="mt-2 text-sm text-slate-500">Choose your style of command and watch the AI process tasks instantly</p>
       </div>
@@ -161,15 +171,15 @@ const SecondSection = () => {
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="flex flex-col rounded-3xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_40px_rgba(15,23,42,0.06)] sm:p-8"
+          className="flex flex-col rounded-3xl border border-slate-200/60 bg-white p-4 sm:p-6 md:p-8 shadow-[0_8px_40px_rgba(15,23,42,0.06)]"
         >
           {/* Header */}
-          <div className="mb-6 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
-              <Terminal className="h-6 w-6" />
+          <div className="mb-6 flex items-center gap-3 sm:gap-4">
+            <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 shrink-0">
+              <Terminal className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <h4 className="text-xl font-bold text-slate-900">Type Your Command</h4>
+              <h4 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">Type Your Command</h4>
               <p className="text-xs text-slate-500">Command via text input</p>
             </div>
           </div>
@@ -273,15 +283,15 @@ const SecondSection = () => {
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="flex flex-col rounded-3xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_40px_rgba(15,23,42,0.06)] sm:p-8"
+          className="flex flex-col rounded-3xl border border-slate-200/60 bg-white p-4 sm:p-6 md:p-8 shadow-[0_8px_40px_rgba(15,23,42,0.06)]"
         >
           {/* Header */}
-          <div className="mb-6 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
-              <Mic className="h-6 w-6 animate-pulse" />
+          <div className="mb-6 flex items-center gap-3 sm:gap-4">
+            <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 shrink-0">
+              <Mic className="h-5 w-5 sm:h-6 sm:w-6 animate-pulse" />
             </div>
             <div>
-              <h4 className="text-xl font-bold text-slate-900">Speak Your Command</h4>
+              <h4 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">Speak Your Command</h4>
               <p className="text-xs text-slate-500">Command via voice input</p>
             </div>
           </div>
@@ -293,16 +303,16 @@ const SecondSection = () => {
           {/* Interactive Visual Window */}
           <div className="flex-1 rounded-2xl border border-slate-100 bg-slate-50 p-5">
             {/* Audio Signal Pulse */}
-            <div className="mb-5 flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm justify-between">
-              <div className="flex items-center gap-3">
-                <Mic className="h-4 w-4 text-indigo-600" />
+            <div className="mb-5 flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-3 sm:px-4 py-3.5 shadow-sm justify-between min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <Mic className="h-4 w-4 text-indigo-600 shrink-0" />
                 <AnimatePresence mode="wait">
                   <motion.p
                     key={voiceIndex}
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -5 }}
-                    className="text-xs font-semibold text-indigo-700 italic"
+                    className="text-xs font-semibold text-indigo-700 italic truncate"
                   >
                     “{activeVoiceResult.speech}”
                   </motion.p>

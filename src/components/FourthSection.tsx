@@ -1,129 +1,236 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Database, Terminal, CheckCircle, TrendingUp, ArrowRight } from "lucide-react";
+import { 
+  Database, 
+  Terminal, 
+  CheckCircle, 
+  TrendingUp, 
+  ArrowRightLeft,
+  Check
+} from "lucide-react";
 
-const steps = [
+const flowStages = [
   {
-    number: "01",
+    id: "ingest",
+    num: "01",
+    phase: "Data Ingest",
     title: "Enter Your Business Data",
     desc: "Add sales, purchases, expenses, inventory and other financial information to keep your business records organised.",
     icon: Database,
-    colorClass: "border-t-sky-500",
-    iconBg: "bg-sky-50 text-sky-600",
+    colorClass: "from-sky-400 to-blue-500",
+    activeBg: "#0c4a6e", // sky-900
+    activeBorder: "#0284c7", // sky-600
     bullet: "Invoice, stock & receipts synced",
-    glowClass: "hover:shadow-[0_20px_45px_rgba(14,165,233,0.12)] hover:border-sky-500/30",
   },
   {
-    number: "02",
+    id: "command",
+    num: "02",
+    phase: "AI Command",
     title: "Give the AI a Command",
     desc: "Type or speak what you need, such as creating an invoice, checking stock or generating a financial report.",
     icon: Terminal,
-    colorClass: "border-t-indigo-500",
-    iconBg: "bg-indigo-50 text-indigo-600",
+    colorClass: "from-indigo-500 to-purple-650",
+    activeBg: "#1e1b4b", // indigo-950
+    activeBorder: "#4f46e5", // indigo-600
     bullet: "Voice or text commands ready",
-    glowClass: "hover:shadow-[0_20px_45px_rgba(99,102,241,0.12)] hover:border-indigo-500/30",
   },
   {
-    number: "03",
+    id: "synthesis",
+    num: "03",
+    phase: "Synthesis",
     title: "Review the Output",
     desc: "Check the invoice, GST calculation, report, stock update or cash flow prediction produced by AIBASS.",
     icon: CheckCircle,
-    colorClass: "border-t-emerald-500",
-    iconBg: "bg-emerald-50 text-emerald-600",
+    colorClass: "from-emerald-500 to-teal-650",
+    activeBg: "#064e3b", // emerald-950
+    activeBorder: "#059669", // emerald-600
     bullet: "Real-time accuracy check",
-    glowClass: "hover:shadow-[0_20px_45px_rgba(16,185,129,0.12)] hover:border-emerald-500/30",
   },
   {
-    number: "04",
+    id: "decision",
+    num: "04",
+    phase: "Optimization",
     title: "Take Better Action",
     desc: "Use the updated financial and operational information to manage expenses, stock, cash flow and everyday business decisions.",
     icon: TrendingUp,
-    colorClass: "border-t-violet-500",
-    iconBg: "bg-violet-50 text-violet-600",
+    colorClass: "from-violet-500 to-fuchsia-600",
+    activeBg: "#2e1065", // violet-950
+    activeBorder: "#7c3aed", // violet-600
     bullet: "Drive growth with AI insights",
-    glowClass: "hover:shadow-[0_20px_45px_rgba(139,92,246,0.12)] hover:border-violet-500/30",
   },
 ];
 
 const FourthSection = () => {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(0);
+
   return (
-    <section className="py-20 lg:py-12">
-      {/* Heading */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
-        className="mx-auto mb-16 max-w-2xl text-center"
-      >
-        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
-          Workflow
-        </span>
-        <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl lg:text-[40px] lg:leading-[1.15]">
-          How{" "}
-          <span className="bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
-            AIBASS Works
-          </span>
-        </h2>
-        <p className="mt-4 text-sm font-medium text-slate-500 sm:text-base">
-          Four simple steps to automate bookkeeping and secure full financial control.
-        </p>
-      </motion.div>
+    <section className="relative py-20 lg:py-24">
+      {/* Background soft glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-slate-100/50 blur-3xl pointer-events-none rounded-full" />
 
-      {/* Grid of Steps */}
-      <div className="relative grid gap-8 md:grid-cols-2 lg:grid-cols-4">
-        {steps.map((step, idx) => {
-          const IconComponent = step.icon;
-          return (
-            <motion.div
-              key={step.number}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: idx * 0.12 }}
-              className={`relative flex flex-col items-start text-left rounded-3xl border border-slate-200/60 border-t-4 ${step.colorClass} bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)] sm:p-7 hover:-translate-y-1 transition-all duration-300 ${step.glowClass}`}
-            >
-              {/* Row: Icon on top-left, Step number on top-right */}
-              <div className="mb-5 flex w-full items-center justify-between">
-                <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${step.iconBg} shadow-sm`}>
-                  <IconComponent className="h-5 w-5" />
-                </div>
-                <span className="rounded-full bg-slate-50 border border-slate-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                  STEP {step.number}
-                </span>
-              </div>
+      <div className="max-w-6xl mx-auto space-y-16 relative z-10">
+        
+        {/* Heading */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="mx-auto max-w-4xl text-center space-y-4"
+        >
+          <h2 className="text-3xl font-extrabold tracking-tight text-[#0B0F19] sm:text-4xl lg:text-5xl leading-tight">
+            How{" "}
+            <span className="bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              AIBASS Works
+            </span>
+          </h2>
+          <p className="text-sm font-semibold leading-relaxed text-slate-555 max-w-2xl mx-auto">
+            A continuous step-by-step process designed to simplify compliance, automate bookkeeping, and secure full financial control.
+          </p>
+        </motion.div>
 
-              {/* Title & Desc */}
-              <h3 className="mb-2 text-base font-extrabold text-slate-900 leading-tight">
-                {step.title}
-              </h3>
-              <p className="flex-1 mb-5 text-xs font-semibold leading-relaxed text-slate-500">
-                {step.desc}
-              </p>
+        {/* ─── DESKTOP EXPANDING ACCORDION VIEW ─── */}
+        <div className="hidden lg:flex lg:flex-row gap-4 lg:h-[380px] w-full items-stretch">
+          {flowStages.map((stage, idx) => {
+            const isExpanded = hoveredIdx === idx;
+            const IconComponent = stage.icon;
 
-              {/* Bullet at bottom */}
-              <div className="mt-auto border-t border-slate-100 pt-4 w-full">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  ✦ {step.bullet}
-                </span>
-              </div>
+            return (
+              <motion.div
+                key={stage.id}
+                onMouseEnter={() => setHoveredIdx(idx)}
+                onClick={() => setHoveredIdx(idx)}
+                animate={{
+                  flex: isExpanded ? 2.5 : 1,
+                  backgroundColor: isExpanded ? stage.activeBg : "#ffffff",
+                  borderColor: isExpanded ? stage.activeBorder : "rgba(226, 232, 240, 0.8)",
+                }}
+                transition={{ 
+                  type: "spring", 
+                  stiffness: 140, 
+                  damping: 22 
+                }}
+                className="relative rounded-2xl border p-6 flex flex-col justify-between overflow-hidden cursor-pointer shadow-md hover:shadow-lg h-full"
+              >
+                {/* Accent Color Band on top */}
+                <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${stage.colorClass}`} />
 
-              {/* Next arrow indicator (only between columns on desktop) */}
-              {idx < 3 && (
-                <>
-                  <div className="absolute top-[45%] -right-4 z-10 hidden translate-y-[-50%] lg:block">
-                    <ArrowRight className="h-5 w-5 text-slate-300" />
-                  </div>
-                  {/* Mobile vertical timeline connector line */}
-                  <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 z-10 block lg:hidden h-8">
-                    <div className="h-full w-0.5 bg-gradient-to-b from-slate-200 to-slate-300 relative">
-                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 border-l-[3px] border-r-[3px] border-t-[5px] border-transparent border-t-slate-300" />
+                <div className="space-y-4">
+                  {/* Top Header info */}
+                  <div className="flex items-center justify-between">
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl shadow-sm transition-colors ${
+                      isExpanded ? "bg-white/10 text-white" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      <IconComponent className="h-5.5 w-5.5" />
                     </div>
+                    <span className={`text-[9px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${
+                      isExpanded ? "bg-white/5 border-white/15 text-white/95" : "bg-slate-50 border-slate-100 text-slate-400"
+                    }`}>
+                      {stage.phase}
+                    </span>
                   </div>
-                </>
-              )}
-            </motion.div>
-          );
-        })}
+
+                  {/* Title & Phase Number */}
+                  <div className="pt-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest block text-slate-400">
+                      Phase {stage.num}
+                    </span>
+                    <h3 className={`text-lg sm:text-xl font-extrabold tracking-tight mt-1 leading-tight transition-colors ${isExpanded ? "text-white" : "text-slate-900"}`}>
+                      {stage.title}
+                    </h3>
+                  </div>
+
+                  {/* Description - Slides open when expanded */}
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ 
+                      opacity: isExpanded ? 1 : 0, 
+                      height: isExpanded ? "auto" : 0,
+                      marginTop: isExpanded ? 12 : 0
+                    }}
+                    transition={{ duration: 0.35, ease: "easeInOut" }}
+                    className={`text-xs font-semibold leading-relaxed overflow-hidden transition-colors ${
+                      isExpanded ? "text-slate-200" : "text-slate-500"
+                    }`}
+                  >
+                    {stage.desc}
+                  </motion.p>
+                </div>
+
+                {/* Footer Checkmark Bullet */}
+                <div className={`mt-8 pt-4 border-t transition-colors ${isExpanded ? "border-white/10" : "border-slate-100"}`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`flex h-5 w-5 items-center justify-center rounded-full transition-colors ${
+                      isExpanded ? "bg-white/10 text-white" : "bg-emerald-50 text-emerald-700"
+                    }`}>
+                      <Check className="h-3 w-3 stroke-[3.5]" />
+                    </div>
+                    <span className={`text-[10px] font-bold uppercase tracking-wide transition-colors ${isExpanded ? "text-white/85" : "text-slate-655"}`}>
+                      {stage.bullet}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* ─── MOBILE/TABLET STACKED FULL VIEW ─── */}
+        <div className="flex flex-col lg:hidden gap-5 px-4">
+          {flowStages.map((stage) => {
+            const IconComponent = stage.icon;
+
+            return (
+              <div
+                key={stage.id}
+                className="relative rounded-2xl border border-slate-200 bg-white p-6 shadow-sm overflow-hidden flex flex-col justify-between"
+              >
+                {/* Accent Color Band on top */}
+                <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${stage.colorClass}`} />
+
+                <div className="space-y-4">
+                  {/* Top Header info */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-600 shadow-sm">
+                      <IconComponent className="h-5.5 w-5.5" />
+                    </div>
+                    <span className="text-[9px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-slate-50 border-slate-100 text-slate-400">
+                      {stage.phase}
+                    </span>
+                  </div>
+
+                  {/* Title & Phase Number */}
+                  <div className="pt-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest block text-slate-400">
+                      Phase {stage.num}
+                    </span>
+                    <h3 className="text-lg font-extrabold tracking-tight mt-1 leading-tight text-slate-900">
+                      {stage.title}
+                    </h3>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-xs font-semibold leading-relaxed text-slate-500 mt-2">
+                    {stage.desc}
+                  </p>
+                </div>
+
+                {/* Footer Checkmark Bullet */}
+                <div className="mt-6 pt-4 border-t border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                      <Check className="h-3 w-3 stroke-[3.5]" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-655">
+                      {stage.bullet}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
       </div>
     </section>
   );

@@ -23,7 +23,7 @@ import {
 const NavigationVisual = () => (
   <div className="flex h-full gap-4">
     {/* Sidebar */}
-    <div className="flex w-40 shrink-0 flex-col gap-1 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+    <div className="hidden sm:flex w-40 shrink-0 flex-col gap-1 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
       <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Menu</p>
       {[
         { icon: Inbox, label: "Dashboard", active: true },
@@ -390,17 +390,17 @@ const PricingVisual = () => {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.15, duration: 0.4 }}
-            className={`rounded-2xl border p-4 text-center ${plan.highlight ? "border-slate-950 bg-slate-950 shadow-lg" : "border-slate-100 bg-white shadow-sm"}`}
+            className={`rounded-2xl border p-2 sm:p-4 text-center ${plan.highlight ? "border-slate-950 bg-slate-950 shadow-lg" : "border-slate-100 bg-white shadow-sm"}`}
           >
-            <p className={`text-[10px] font-bold uppercase tracking-wider ${plan.highlight ? "text-white/50" : "text-slate-400"}`}>{plan.name}</p>
-            <p className={`mt-1 text-xl font-bold ${plan.highlight ? "text-white" : "text-slate-900"}`}>{plan.price}</p>
-            <p className={`text-[10px] ${plan.highlight ? "text-white/40" : "text-slate-400"}`}>{plan.period}</p>
+            <p className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider ${plan.highlight ? "text-white/50" : "text-slate-400"}`}>{plan.name}</p>
+            <p className={`mt-1 text-sm sm:text-xl font-bold whitespace-nowrap ${plan.highlight ? "text-white" : "text-slate-900"}`}>{plan.price}</p>
+            <p className={`text-[9px] sm:text-[10px] ${plan.highlight ? "text-white/40" : "text-slate-400"}`}>{plan.period}</p>
             {plan.highlight && (
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.7, type: "spring" }}
-                className="mt-2 inline-block rounded-full bg-emerald-500 px-2 py-0.5 text-[9px] font-bold text-white"
+                className="mt-1.5 inline-block rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider"
               >
                 BEST VALUE
               </motion.span>
@@ -537,13 +537,6 @@ const FirstSection = ({ onWatchDemo }: { onWatchDemo: () => void }) => {
         transition={{ duration: 0.6 }}
         className="mb-10 text-center"
       >
-        <div className="mb-3 flex justify-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-slate-500 shadow-sm backdrop-blur-md">
-            <span className="text-sky-600">01</span>
-            <span className="h-3 w-px bg-slate-300" />
-            First Section
-          </span>
-        </div>
         <h2 className="text-balance text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl lg:text-[42px] lg:leading-[1.15]">
           How Our AI Based Accounting Software{" "}
           <span className="bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
@@ -604,7 +597,7 @@ const FirstSection = ({ onWatchDemo }: { onWatchDemo: () => void }) => {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -40 }}
             transition={{ duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="grid min-h-[520px] items-start gap-10 px-8 py-12 sm:px-12 sm:py-14 lg:grid-cols-[1.25fr_0.75fr] lg:gap-16"
+            className="grid min-h-[520px] items-start gap-8 px-4 py-8 sm:px-12 sm:py-14 lg:grid-cols-[1.25fr_0.75fr] lg:gap-16"
           >
             {/* Left */}
             <div className="flex h-full flex-col justify-center">
@@ -643,7 +636,7 @@ const FirstSection = ({ onWatchDemo }: { onWatchDemo: () => void }) => {
             </div>
 
             {/* Right — unique visual per tab */}
-            <div className="flex h-full min-h-[380px] flex-col rounded-2xl bg-slate-50/60 p-4">
+            <div className="flex h-full min-h-[340px] sm:min-h-[380px] flex-col rounded-2xl bg-slate-50/60 p-3 sm:p-4">
               <Visual />
             </div>
           </motion.div>

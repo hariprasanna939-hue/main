@@ -26,6 +26,7 @@ import AutomationInvoice from "./pages/AutomationInvoice";
 import PublicInvoiceView from "./pages/PublicInvoiceView";
 import PublicPurchaseInvoiceView from "./pages/PublicPurchaseInvoiceView";
 import ServerIssues from "./pages/ServerIssues";
+import AiAccountingExplained from "./pages/AiAccountingExplained";
 
 
 
@@ -42,7 +43,8 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<AiAccountingExplained />} />
+            <Route path="/ai-accounting-software" element={<Index />} />
 
             {/* Maintenance Mode Gates */}
             <Route
