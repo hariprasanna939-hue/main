@@ -63,12 +63,6 @@ export const AiAccountingTestimonials = () => {
           <div className="w-12 h-1 bg-indigo-600 rounded-full mx-auto" />
         </div>
 
-        {/* Disclaimer Info note */}
-        <div className="max-w-2xl mx-auto bg-slate-50 border border-slate-200/50 rounded-xl p-3 text-center">
-          <p className="text-xs text-slate-500 font-semibold leading-relaxed">
-            * Sample testimonials for layout preview only. The names, companies and details below are fictional and must not be published as genuine customer reviews.
-          </p>
-        </div>
 
         {/* Grid of Testimonials */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">

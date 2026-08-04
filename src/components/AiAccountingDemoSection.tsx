@@ -356,38 +356,14 @@ export const AiAccountingDemoSection = () => {
           </div>
         </div>
 
-        {/* Feature Cards Grid below Demo */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6 pt-4 max-w-6xl mx-auto">
-          {featureCards.map((item, index) => {
-            const Icon = item.icon;
-            return (
-              <div 
-                key={index} 
-                className="bg-white border border-slate-150 rounded-2xl p-5 flex flex-col items-center text-center space-y-3.5 shadow-sm"
-              >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.color} border shadow-inner`}>
-                  <Icon className="h-4.5 w-4.5" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800 leading-snug">{item.title}</h4>
-                  <p className="text-[10px] text-slate-500 font-medium mt-1 leading-snug">{item.desc}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
         {/* CTA Banner bottom */}
         <div className="space-y-4 pt-4">
           <Button
-            onClick={() => navigate("/auth?tab=signup")}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold h-12 px-8 rounded-full text-sm shadow-md transition-all hover:-translate-y-0.5"
           >
             Book a Free Demo
           </Button>
-          <p className="text-[11px] font-semibold text-slate-450">
-            See how AIBASS simplifies invoicing, GST, inventory and financial reporting.
-          </p>
         </div>
 
       </div>

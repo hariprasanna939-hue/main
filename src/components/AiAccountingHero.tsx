@@ -48,7 +48,7 @@ export const AiAccountingHero = () => {
             
             <div className="flex flex-col sm:flex-row items-center gap-4 pt-2">
               <Button 
-                onClick={() => navigate("/auth?tab=signup")}
+                onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                 className="w-full sm:w-auto h-12 rounded-full bg-slate-950 px-6 text-sm font-semibold text-white shadow-md hover:bg-slate-800 transition-all hover:-translate-y-0.5"
               >
                 Start 30 Day Free Trial
@@ -56,7 +56,7 @@ export const AiAccountingHero = () => {
               </Button>
               <Button 
                 variant="outline"
-                onClick={() => navigate("/auth?tab=signup")}
+                onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                 className="w-full sm:w-auto h-12 rounded-full border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-6 text-sm transition-all hover:-translate-y-0.5"
               >
                 Book a Free Demo

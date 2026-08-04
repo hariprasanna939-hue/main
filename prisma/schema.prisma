@@ -1,0 +1,488 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Image {
+  id      String  @id @default(cuid())
+  url     String
+  altText String?
+
+  countries           Country[]
+  packageFooters      Package[]        @relation("PackageFooterImage")
+  packageCuisineBgs   Package[]        @relation("PackageCuisineBg")
+  packageWhyLoveBgs   Package[]        @relation("PackageWhyLoveBg")
+  countryFooters      Country[]        @relation("CountryFooterImage")
+  countryHeroDesktops Country[]        @relation("CountryHeroDesktopImage")
+  countryHeroMobiles  Country[]        @relation("CountryHeroMobileImage")
+  packageGalleries    PackageGallery[]
+  itineraries         Itinerary[]
+  experienceImageOnes Experience[]     @relation("ExperienceImageOne")
+  hotels              Hotel[]
+  icons               Icon[]
+  testimonials        Testimonial[]
+  localCuisines       LocalCuisine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum PackageType {
+  MAIN
+  ADDON
+}
+
+model SeoMeta {
+  id          String  @id @default(cuid())
+  title       String?
+  description String? @db.Text
+  keywords    String?
+
+  countryId String?  @unique
+  country   Country? @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  packageId String?  @unique
+  package   Package? @relation(fields: [packageId], references: [id], onDelete: Cascade)
+}
+
+model Country {
+  id    String  @id @default(cuid())
+  name  String
+  title String?
+
+  imageId String?
+  image   Image?  @relation(fields: [imageId], references: [id])
+
+  description String? @db.Text
+
+  primaryColor   String?
+  secondaryColor String?
+
+  footerImageId String?
+  footerImage   Image?  @relation("CountryFooterImage", fields: [footerImageId], references: [id])
+
+  heroDesktopImageId String?
+  heroDesktopImage   Image?  @relation("CountryHeroDesktopImage", fields: [heroDesktopImageId], references: [id])
+
+  heroMobileImageId String?
+  heroMobileImage   Image?  @relation("CountryHeroMobileImage", fields: [heroMobileImageId], references: [id])
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  packages Package[]
+  seoMeta  SeoMeta?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([imageId])
+  @@index([footerImageId])
+  @@index([heroDesktopImageId])
+  @@index([heroMobileImageId])
+}
+
+model Package {
+  id String @id @default(cuid())
+
+  countryId String
+  country   Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  title       String
+  subtitle    String?
+  slug        String  @unique
+  description String  @db.Text
+
+  durationDays   Int
+  durationNights Int
+
+  bestTimeToTravel String?
+  weather          String?
+  travelTime       String?
+  tourDuration     String?
+  tourStyle        String?
+
+  type PackageType @default(MAIN)
+
+  isActive Boolean @default(true)
+
+  currency String @default("INR")
+
+  primaryColor   String?
+  secondaryColor String?
+
+  footerTitle   String?
+  footerImageId String?
+  footerImage   Image?  @relation("PackageFooterImage", fields: [footerImageId], references: [id])
+
+  cuisineBgImageId String?
+  cuisineBgImage   Image?  @relation("PackageCuisineBg", fields: [cuisineBgImageId], references: [id])
+
+  whyLoveBgImageId String?
+  whyLoveBgImage   Image?  @relation("PackageWhyLoveBg", fields: [whyLoveBgImageId], references: [id])
+
+  sortOrder Int @default(0)
+
+  gallery        PackageGallery[]
+  itineraries    Itinerary[]
+  departureDates DepartureDate[]
+  bestSeasons    BestSeason[]
+  pricePackages  PricePackage[]
+  experiences    Experience[]
+  hotels         Hotel[]
+  goodToKnows    GoodToKnow[]
+  perfectFors    PerfectFor[]
+  localCuisines  LocalCuisine[]
+  seoMeta        SeoMeta?
+  highlights     PackageHighlight[]
+
+  addons   PackageAddon[] @relation("PackageAddons")
+  addonFor PackageAddon[] @relation("AddonPackages")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([countryId])
+  @@index([footerImageId])
+  @@index([cuisineBgImageId])
+  @@index([whyLoveBgImageId])
+}
+
+model PackageGallery {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  imageId String
+  image   Image  @relation(fields: [imageId], references: [id])
+
+  isCover  Boolean @default(false)
+  isBanner Boolean @default(false)
+
+  sortOrder Int @default(0)
+
+  @@index([packageId])
+  @@index([imageId])
+}
+
+model PackageAddon {
+  id String @id @default(cuid())
+
+  packageId      String
+  addonPackageId String
+
+  package      Package @relation("PackageAddons", fields: [packageId], references: [id], onDelete: Cascade)
+  addonPackage Package @relation("AddonPackages", fields: [addonPackageId], references: [id], onDelete: Cascade)
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([packageId, addonPackageId])
+  @@index([packageId])
+  @@index([addonPackageId])
+}
+
+model Itinerary {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  dayNumber Int
+
+  title       String
+  subtitle    String?
+  description String  @db.Text
+
+  imageId String?
+  image   Image?  @relation(fields: [imageId], references: [id])
+
+  country String?
+  state   String?
+  city    String?
+  lat     Float?
+  lng     Float?
+
+  icons   Icon[]
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+  @@index([imageId])
+}
+
+model DepartureDate {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  departureDate DateTime
+
+  availableSeats Int?
+  isActive       Boolean @default(true)
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+}
+
+enum Month {
+  JANUARY
+  FEBRUARY
+  MARCH
+  APRIL
+  MAY
+  JUNE
+  JULY
+  AUGUST
+  SEPTEMBER
+  OCTOBER
+  NOVEMBER
+  DECEMBER
+}
+
+enum SeasonType {
+  BEST
+  MODERATE
+  OFF_SEASON
+}
+
+model BestSeason {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  month Month
+  type  SeasonType @default(BEST)
+
+  sortOrder Int @default(0)
+
+  @@unique([packageId, month])
+  @@index([packageId])
+}
+
+model PricePackage {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  title       String
+  subtitle    String?
+  description String  @db.Text
+
+  price Decimal @db.Decimal(10, 2)
+
+  isDefault Boolean @default(false)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+}
+
+model Experience {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  imageOneId String
+  imageOne   Image  @relation("ExperienceImageOne", fields: [imageOneId], references: [id])
+
+  title       String
+  description String @db.Text
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+  @@index([imageOneId])
+}
+
+model Hotel {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  imageId String
+  image   Image  @relation(fields: [imageId], references: [id])
+
+  title       String
+  description String @db.Text
+
+  rating Float
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+  @@index([imageId])
+}
+
+model GoodToKnow {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  iconId String?
+  icon   Icon?   @relation(fields: [iconId], references: [id])
+
+  title       String
+  description String @db.Text
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+  @@index([iconId])
+}
+
+model PerfectFor {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  iconId String?
+  icon   Icon?   @relation(fields: [iconId], references: [id])
+
+  title       String
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+  @@index([iconId])
+}
+
+model Admin {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String
+  resetToken         String?   @unique
+  resetTokenExpiry   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+
+model Icon {
+  id      String @id @default(cuid())
+  name    String
+  imageId String
+  image   Image  @relation(fields: [imageId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  itineraries   Itinerary[]
+  localCuisines LocalCuisine[]
+  goodToKnows   GoodToKnow[]
+  perfectFors   PerfectFor[]
+  packageHighlights PackageHighlight[]
+
+  @@index([imageId])
+}
+
+model Testimonial {
+  id        String @id @default(cuid())
+  name      String
+  content   String @db.Text
+  imageId   String?
+  image     Image? @relation(fields: [imageId], references: [id])
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([imageId])
+}
+
+model LocalCuisine {
+  id String @id @default(cuid())
+
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  title       String?
+
+  imageId String?
+  image   Image?  @relation(fields: [imageId], references: [id])
+
+  iconId String?
+  icon   Icon?   @relation(fields: [iconId], references: [id])
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([packageId])
+  @@index([imageId])
+  @@index([iconId])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+model Booking {
+  id String @id @default(cuid())
+
+  // Customer details
+  firstName        String
+  lastName         String
+  email            String
+  phone            String
+  residenceCountry String?
+  notes            String? @db.Text
+
+  // Trip details
+  packageTitle   String
+  destination    String
+  addons         String?
+  departureDate  String?
+  returnDate     String?
+  tripLength     String?
+  adults         Int     @default(1)
+  children       Int     @default(0)
+  infants        Int     @default(0)
+  interests      String?
+  travelStyle    String?
+  accommodations String?
+  flightSupport  String?
+  packageTier    String?
+  totalPrice     String?
+  currency       String  @default("INR")
+
+  status    BookingStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([email])
+  @@index([status])
+}
+
+model PackageHighlight {
+  id        String   @id @default(cuid())
+  packageId String
+  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  iconId    String?
+  icon      Icon?    @relation(fields: [iconId], references: [id])
+  title     String
+  value     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([packageId])
+  @@index([iconId])
+}

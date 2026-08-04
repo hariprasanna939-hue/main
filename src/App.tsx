@@ -43,8 +43,8 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/ai-accounting-explained" element={<AiAccountingExplained />} />
+            <Route path="/" element={<AiAccountingExplained />} />
+            <Route path="/ai-accounting-software" element={<Index />} />
 
             {/* Maintenance Mode Gates */}
             <Route

@@ -39,7 +39,7 @@ export const AiAccountingBottomBanner = () => {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <Button
-                onClick={() => navigate("/auth?tab=signup")}
+                onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                 className="w-full sm:w-auto bg-slate-950 hover:bg-slate-850 text-white font-bold h-12 px-8 rounded-full text-xs shadow-md transition-all hover:-translate-y-0.5"
               >
                 Book a Free Demo
@@ -48,12 +48,7 @@ export const AiAccountingBottomBanner = () => {
               
               <Button
                 variant="outline"
-                onClick={() => {
-                  const element = document.getElementById("pricing-section");
-                  if (element) {
-                    element.scrollIntoView({ behavior: "smooth" });
-                  }
-                }}
+                onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                 className="w-full sm:w-auto border-slate-300 bg-white/50 hover:bg-slate-100/50 text-slate-750 font-bold h-12 px-8 rounded-full text-xs transition-all hover:-translate-y-0.5"
               >
                 View Pricing

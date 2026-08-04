@@ -9,8 +9,10 @@ import {
   Boxes,
   TrendingDown
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export const AiAccountingChallenges = () => {
+  const navigate = useNavigate();
   const challenges = [
     {
       title: "Complex Software",
@@ -105,12 +107,7 @@ export const AiAccountingChallenges = () => {
         {/* CTA */}
         <div className="text-center pt-4">
           <Button 
-            onClick={() => {
-              const element = document.getElementById("ai-commands");
-              if (element) {
-                element.scrollIntoView({ behavior: "smooth" });
-              }
-            }}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="bg-slate-950 hover:bg-slate-800 text-white font-semibold h-11 px-6 rounded-full inline-flex items-center gap-2 group transition-all"
           >
             Discover How AIBASS Helps

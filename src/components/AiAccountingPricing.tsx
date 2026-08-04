@@ -153,7 +153,7 @@ export const AiAccountingPricing = () => {
 
                 {/* Button / CTA */}
                 <Button
-                  onClick={() => navigate("/auth?tab=signup")}
+                  onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                   className="w-full h-11 rounded-xl font-bold text-xs bg-slate-950 text-white hover:bg-slate-855 shadow-sm border border-slate-955 transition-colors mb-6"
                 >
                   {tier.cta}

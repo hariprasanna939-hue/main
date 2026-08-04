@@ -55,7 +55,7 @@ export const AiAccountingDashboardSection = () => {
 
             <div className="pt-2">
               <Button
-                onClick={() => navigate("/dashboard")}
+                onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                 className="bg-indigo-600 hover:bg-indigo-750 text-white font-semibold h-12 px-6 rounded-full inline-flex items-center gap-2 group transition-all shadow-md hover:shadow-indigo-200"
               >
                 View the Financial Dashboard

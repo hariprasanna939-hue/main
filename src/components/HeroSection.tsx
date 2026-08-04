@@ -123,7 +123,7 @@ const HeroSection = ({ onWatchDemo }: HeroSectionProps) => {
         <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
           <Button
             size="default"
-            onClick={() => setIsDialogOpen(true)}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="group relative h-12 overflow-hidden rounded-full bg-slate-950 px-6 text-sm font-semibold text-white shadow-[0_18px_42px_rgba(15,23,42,0.26)] transition-all duration-300 hover:-translate-y-1 hover:bg-slate-800 hover:shadow-[0_24px_54px_rgba(15,23,42,0.36)]"
           >
             <span className="relative z-10 flex items-center">

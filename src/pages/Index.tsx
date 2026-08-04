@@ -33,6 +33,7 @@ import FaqSection from "@/components/FaqSection";
 import EighthSection from "@/components/EighthSection";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
+import { TrialFormModal } from "@/components/TrialFormModal";
 
 type Stat = {
   icon: JSX.Element;
@@ -195,14 +196,15 @@ const Index = () => {
       )}
 
       <Header />
+      <TrialFormModal />
 
       <main className="relative mx-auto max-w-7xl px-5 sm:px-6">
-        <HeroSection onWatchDemo={() => setShowDemo(true)} />
+        <HeroSection onWatchDemo={() => window.dispatchEvent(new CustomEvent("openTrialModal"))} />
       </main>
 
       {/* Full-width First Section */}
       <div className="relative mx-auto max-w-[1380px] w-full px-4 sm:px-8 lg:px-12">
-        <FirstSection onWatchDemo={() => setShowDemo(true)} />
+        <FirstSection onWatchDemo={() => window.dispatchEvent(new CustomEvent("openTrialModal"))} />
       </div>
 
       {/* Full-width Third Section */}

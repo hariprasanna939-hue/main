@@ -90,21 +90,21 @@ export const AiAccountingWorkflow = () => {
         <div className="text-center space-y-6 pt-4">
           <p className="text-base md:text-lg font-bold text-slate-850 max-w-3xl mx-auto leading-relaxed">
             AIBASS reduces manual work and helps you understand your business finance better every day.{" "}
-            <span className="text-indigo-650 cursor-pointer hover:underline" onClick={() => navigate("/auth?tab=signup")}>
+            <span className="text-indigo-650 cursor-pointer hover:underline" onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}>
               Start your 30 day free trial today!
             </span>
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button
-              onClick={() => navigate("/auth?tab=signup")}
+              onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
               className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-8 py-6 rounded-xl text-base shadow-lg shadow-indigo-100 transition-all hover:-translate-y-0.5"
             >
               Start 30 Day Free Trial
             </Button>
             <Button
               variant="outline"
-              onClick={() => navigate("/auth?tab=signup")}
+              onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
               className="w-full sm:w-auto border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-8 py-6 rounded-xl text-base transition-all hover:-translate-y-0.5"
             >
               Book a Free Demo

@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FAF8F6;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-poppins);
+  --font-serif: var(--font-cormorant);
+  --font-mono: var(--font-geist-mono);
+  --font-poppins: var(--font-poppins);
+  --font-cormorant: var(--font-cormorant);
+  --font-sora: var(--font-sora);
+  --font-playfair: var(--font-playfair);
+  --animate-marquee: marquee var(--duration) linear infinite;
+  
+  /* Website Brand Primary Colors (Gold/Amber Palette) */
+  --color-primary: #ebb337;
+  --color-primary-hover: #d9a026;
+  --color-primary-dark: #C68A2C;
+  --color-primary-light: #f1c762;
+  --color-primary-extralight: #fef8eb;
+}
+
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100% - var(--gap))); }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-poppins), sans-serif;
+}
+
+/* Custom date picker styling to make the entire input area clickable to open the picker */
+.custom-date-input {
+  position: relative;
+}
+
+.custom-date-input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.custom-date-input::-webkit-inner-spin-button,
+.custom-date-input::-webkit-clear-button {
+  display: none;
+  -webkit-appearance: none;
+}

@@ -91,8 +91,8 @@ export const AiAccountingHowItWorks = () => {
 
                   {/* Arrow connector (between steps) */}
                   {index < steps.length - 1 && (
-                    <div className="col-span-1 flex items-center justify-center" style={{ paddingTop: '0px' }}>
-                      <div className="flex items-center gap-0.5 text-slate-300" style={{ marginTop: '-48px' }}>
+                    <div className="col-span-1 flex items-center justify-center">
+                      <div className="flex items-center gap-0.5 text-slate-300" style={{ marginTop: '28px' }}>
                         <div className="w-6 h-px bg-slate-200" />
                         <ChevronRight className="h-6 w-6" />
                       </div>
@@ -138,7 +138,7 @@ export const AiAccountingHowItWorks = () => {
         {/* CTA */}
         <div className="text-center pt-4">
           <Button
-            onClick={() => navigate("/auth?tab=signup")}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="bg-slate-950 hover:bg-slate-800 text-white font-semibold h-12 px-8 rounded-full inline-flex items-center gap-2 group transition-all"
           >
             Book a Product Walkthrough

@@ -133,7 +133,7 @@ export const AiAccountingSecurity = () => {
             </p>
           </div>
           <Button
-            onClick={() => navigate("/auth?tab=signup")}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold h-12 px-8 rounded-full text-sm shadow-md transition-all hover:-translate-y-0.5"
           >
             Start Your 30 Day Free Trial

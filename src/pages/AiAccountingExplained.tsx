@@ -6,7 +6,12 @@ import {
   X, 
   ArrowUp,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  Mic,
+  Calculator,
+  Package,
+  BarChart3,
+  TrendingUp
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence, useScroll, useMotionValueEvent } from "framer-motion";
@@ -29,6 +34,7 @@ import { AiAccountingBottomBanner } from "@/components/AiAccountingBottomBanner"
 import { AiAccountingFaq } from "@/components/AiAccountingFaq";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
+import { TrialFormModal } from "@/components/TrialFormModal";
 
 const AiAccountingExplained = () => {
   const navigate = useNavigate();
@@ -77,11 +83,11 @@ const AiAccountingExplained = () => {
   };
 
   const productHighlights = [
-    "Voice and Text Commands",
-    "Automatic GST Calculation",
-    "Connected Stock Updates",
-    "Clear Financial Reports",
-    "Cash Flow Predictions"
+    { text: "Voice and Text Commands", icon: Mic, bgClass: "bg-blue-50 text-blue-600 border-blue-100" },
+    { text: "Automatic GST Calculation", icon: Calculator, bgClass: "bg-purple-50 text-purple-600 border-purple-100" },
+    { text: "Connected Stock Updates", icon: Package, bgClass: "bg-amber-50 text-amber-600 border-amber-100" },
+    { text: "Clear Financial Reports", icon: BarChart3, bgClass: "bg-emerald-50 text-emerald-600 border-emerald-100" },
+    { text: "Cash Flow Predictions", icon: TrendingUp, bgClass: "bg-indigo-50 text-indigo-600 border-indigo-100" }
   ];
 
   return (
@@ -99,6 +105,7 @@ const AiAccountingExplained = () => {
       />
 
       <Header />
+      <TrialFormModal />
 
       {/* Main Container */}
       <main className="relative z-10 mx-auto max-w-[1380px] w-full px-4 sm:px-8 lg:px-12 pb-16">
@@ -108,26 +115,31 @@ const AiAccountingExplained = () => {
 
         {/* Section 2: Product Highlights */}
         <section id="highlights" className="py-6 md:py-8 border-t border-slate-100 scroll-mt-24">
-          <div className="max-w-4xl mx-auto bg-white border border-slate-200/60 rounded-[32px] p-6 shadow-[0_15px_40px_rgba(0,0,0,0.03)] space-y-6">
+          <div className="max-w-6xl mx-auto bg-white border border-slate-200/60 rounded-[32px] p-6 md:p-8 shadow-[0_15px_40px_rgba(0,0,0,0.03)] space-y-6">
             <h3 className="text-xl font-bold text-slate-900 tracking-tight text-center">
               Product Highlights
             </h3>
             <div className="w-12 h-1 bg-indigo-600 rounded-full mx-auto" />
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 pt-4 justify-center">
-              {productHighlights.map((highlight, index) => (
-                <div key={index} className="flex items-center gap-3 justify-center sm:justify-start">
-                  <CheckCircle2 className="h-5 w-5 text-indigo-500 flex-shrink-0" />
-                  <span className="text-sm font-semibold text-slate-700">{highlight}</span>
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center justify-center gap-3 md:gap-4 pt-2 w-full">
+              {productHighlights.map((highlight, index) => {
+                const Icon = highlight.icon;
+                return (
+                  <div key={index} className="flex items-center gap-2 bg-slate-50/50 hover:bg-slate-50 transition-colors duration-200 px-3.5 py-2 rounded-2xl border border-slate-100 w-full md:w-auto">
+                    <div className={`p-1.5 rounded-xl border ${highlight.bgClass} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs lg:text-sm font-bold text-slate-700 whitespace-nowrap">{highlight.text}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
 
         {/* Section 3: AI Based Accounting Software Built for Modern Businesses */}
         <section id="about-aibass" className="py-6 md:py-8 border-t border-slate-100 scroll-mt-24">
-          <div className="max-w-4xl space-y-6">
+          <div className="max-w-6xl mx-auto text-center flex flex-col items-center justify-center space-y-6">
             <div className="space-y-3">
               <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
                 AI Based Accounting Software Built for Modern Businesses
@@ -153,13 +165,8 @@ const AiAccountingExplained = () => {
 
             <div className="pt-2">
               <Button 
-                onClick={() => {
-                  const element = document.getElementById("ai-features");
-                  if (element) {
-                    element.scrollIntoView({ behavior: "smooth" });
-                  }
-                }}
-                className="bg-indigo-600 hover:bg-indigo-755 text-white font-semibold px-6 py-5 rounded-full flex items-center gap-2 group transition-all shadow-md hover:shadow-indigo-200"
+                onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
+                className="bg-indigo-600 hover:bg-indigo-755 text-white font-semibold px-6 py-5 rounded-full flex items-center gap-2 group transition-all shadow-md hover:shadow-indigo-200 mx-auto"
               >
                 Explore AIBASS Features
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />

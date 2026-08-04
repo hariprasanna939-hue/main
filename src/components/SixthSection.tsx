@@ -33,20 +33,6 @@ const SixthSection = () => {
             Modern Indian business owners require accounting software that is fast, accessible, and error-free. Here's how AIBASS helps you stay ahead.
           </p>
 
-          {/* Interactive visual helper card */}
-          <div className="rounded-2xl border border-sky-100 bg-sky-50/50 p-4 flex gap-3.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm">
-              <Zap className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-sky-950 uppercase tracking-wider mb-1">
-                Zero Learning Curve
-              </p>
-              <p className="text-xs font-semibold text-sky-800 leading-relaxed">
-                Give commands naturally via voice or text and skip navigating through nested dashboard menus entirely.
-              </p>
-            </div>
-          </div>
         </motion.div>
 
         {/* Right Side: Checklist Cards Grid */}

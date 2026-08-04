@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, Terminal, MessageSquare, Sparkles, CheckCircle2, PlayCircle, AlertCircle, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const textDemoSteps = [
   {
@@ -146,13 +147,13 @@ const SecondSection = () => {
         </div>
 
         <div className="relative z-10 shrink-0">
-          <a
-            href="#demo"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-md hover:bg-slate-850 hover:scale-105 active:scale-95 transition-all duration-200"
+          <Button
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-bold text-white shadow-md hover:bg-slate-800 hover:scale-105 active:scale-95 transition-all duration-200 h-auto"
           >
-            Book a Demo
-            <ArrowRight className="h-5 w-5" />
-          </a>
+            Book a Free Demo
+            <ArrowRight className="h-4 w-4" />
+          </Button>
         </div>
       </motion.div>
 

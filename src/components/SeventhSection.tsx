@@ -199,12 +199,7 @@ const SeventhSection = () => {
 
                 {/* Button / CTA */}
                 <Button
-                  onClick={() => {
-                    toast({
-                      title: `Selected ${tier.name}`,
-                      description: "Book a demo to proceed with account setup.",
-                    });
-                  }}
+                  onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
                   className="w-full h-11 rounded-xl font-bold text-xs bg-slate-950 text-white hover:bg-slate-850 shadow-sm border border-slate-950 transition-colors mb-6"
                 >
                   {tier.cta}

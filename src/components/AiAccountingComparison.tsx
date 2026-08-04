@@ -96,27 +96,11 @@ export const AiAccountingComparison = () => {
           ))}
         </div>
 
-        {/* Scope disclaimer warning info banner */}
-        <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-5 max-w-4xl mx-auto flex items-start gap-4 text-left shadow-sm">
-          <div className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-200/40 flex items-center justify-center text-blue-600 shrink-0">
-            <Info className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-sm text-blue-800 font-semibold leading-relaxed">
-              AIBASS does not remove the need to review important accounting information. It makes the process of accessing supported tasks and business information simpler.
-            </p>
-          </div>
-        </div>
 
         {/* CTA */}
         <div className="text-center pt-4">
           <Button
-            onClick={() => {
-              const element = document.getElementById("aibass-action-demo");
-              if (element) {
-                element.scrollIntoView({ behavior: "smooth" });
-              }
-            }}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold h-12 px-8 rounded-full inline-flex items-center gap-2 group transition-all"
           >
             Compare the AIBASS Experience

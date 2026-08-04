@@ -3,20 +3,6 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles } from "lucide-react";
 
 const EighthSection = () => {
-  const handleScrollToDemo = () => {
-    const el = document.getElementById("solutions"); // Scrolls to booking form inside SeventhSection/solutions area
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-
-  const handleScrollToPricing = () => {
-    const el = document.getElementById("pricing");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-
   return (
     <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white px-8 py-16 text-center shadow-[0_12px_45px_rgba(15,23,42,0.06)] md:py-20">
       {/* Background glow effects */}
@@ -39,14 +25,14 @@ const EighthSection = () => {
 
         <div className="pt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
           <Button
-            onClick={handleScrollToDemo}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             className="group h-12 rounded-full bg-slate-950 px-7 text-xs font-bold text-white shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800"
           >
             Book a Free Demo
             <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
           </Button>
           <Button
-            onClick={handleScrollToPricing}
+            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
             variant="outline"
             className="h-12 rounded-full border-slate-300 bg-white/50 px-7 text-xs font-bold text-slate-750 shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-100/50"
           >

@@ -205,14 +205,22 @@ export const AiAccountingGstSection = () => {
               { title: "Automatic Sales Invoice Creation", desc: "Create GST sales invoices faster.", icon: FileText, color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
               { title: "Intrastate GST Calculation", desc: "Automatically calculate CGST and SGST.", icon: Percent, color: "text-blue-600 bg-blue-50 border-blue-100" },
               { title: "Interstate GST Calculation", desc: "Automatically calculate applicable IGST.", icon: Percent, color: "text-indigo-650 bg-indigo-50 border-indigo-100" },
-              { title: "CGST and SGST Calculation", desc: "CGST and SGST calculated for intrastate sales.", icon: Percent, color: "text-purple-650 bg-purple-50 border-purple-100" },
+              { title: "CGST and SGST Calculation", desc: "CGST and SGST calculated for intrastate sales.", icon: Percent, color: "text-purple-655 bg-purple-50 border-purple-100" },
               { title: "IGST Calculation", desc: "IGST calculated for interstate sales.", icon: Percent, color: "text-orange-655 bg-orange-50 border-orange-100" },
               { title: "Connected Sales and Accounting Records", desc: "Keep sales and accounting information aligned.", icon: Link, color: "text-teal-600 bg-teal-50 border-teal-100" },
               { title: "Sales Based Inventory Updates", desc: "Inventory is updated automatically on sales.", icon: Package, color: "text-rose-600 bg-rose-50 border-rose-100" }
             ].map((cap, idx) => {
               const Icon = cap.icon;
+              const isLast = idx === 6;
               return (
-                <div key={idx} className="bg-white border border-slate-150 rounded-2xl p-5 flex items-center gap-4 text-left shadow-sm">
+                <div 
+                  key={idx} 
+                  className={`bg-white border border-slate-150 rounded-2xl p-5 flex shadow-sm transition-all flex-row items-center gap-4 text-left ${
+                    isLast 
+                      ? "lg:col-start-2 lg:col-span-1 sm:col-span-2 max-w-md mx-auto w-full" 
+                      : ""
+                  }`}
+                >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${cap.color} flex-shrink-0`}>
                     <Icon className="h-4.5 w-4.5" />
                   </div>
@@ -226,31 +234,19 @@ export const AiAccountingGstSection = () => {
           </div>
         </div>
 
-        {/* Section: GST Warning Banner */}
-        <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-5 max-w-4xl mx-auto flex items-start gap-4 text-left shadow-sm">
-          <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-200/40 flex items-center justify-center text-amber-600 shrink-0">
-            <Info className="h-5 w-5" />
-          </div>
-          <div>
-            <h4 className="text-xs font-extrabold text-amber-900 uppercase tracking-wide">GST Feature Scope</h4>
-            <p className="text-sm text-amber-800 font-semibold mt-1 leading-relaxed">
-              AIBASS supports GST calculation during invoice creation. GST return filing, GSTR reconciliation, TDS management and other statutory activities should be handled separately unless those features are officially available.
-            </p>
-          </div>
-        </div>
 
         {/* Bottom CTA Actions */}
         <div className="text-center space-y-4 pt-4 border-t border-slate-100">
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button
-              onClick={() => navigate("/auth?tab=signup")}
+              onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
               className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold h-12 px-8 rounded-full text-sm shadow-md transition-all hover:-translate-y-0.5"
             >
               Start 30 Day Free Trial
             </Button>
             <Button
               variant="outline"
-              onClick={() => navigate("/tax-gst")}
+              onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
               className="w-full sm:w-auto border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold h-12 px-8 rounded-full text-sm transition-all hover:-translate-y-0.5"
             >
               Explore GST Accounting
