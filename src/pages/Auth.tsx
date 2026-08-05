@@ -471,8 +471,8 @@ const Auth = () => {
 
       <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 pb-6 pt-5 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="auth-logo flex h-12 w-12 items-center justify-center rounded-[18px]">
-            <Building2 className="h-6 w-6 text-white" />
+          <div className="auth-logo flex h-12 w-12 items-center justify-center rounded-[18px] overflow-hidden">
+            <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="text-sm font-semibold tracking-tight text-slate-950 sm:text-base">
@@ -551,8 +551,8 @@ const Auth = () => {
           <Card className="auth-panel overflow-hidden rounded-[36px] border-white/70 bg-white/78 shadow-[0_35px_90px_rgba(15,23,42,0.14)] backdrop-blur-2xl">
             <CardHeader className="space-y-3 border-b border-slate-200/70 bg-white/35 px-8 py-8">
               <div className="flex items-center gap-3">
-                <div className="auth-logo flex h-12 w-12 items-center justify-center rounded-[18px]">
-                  <Building2 className="h-6 w-6 text-white" />
+                <div className="auth-logo flex h-12 w-12 items-center justify-center rounded-[18px] overflow-hidden">
+                  <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <CardTitle className="text-2xl font-semibold tracking-tight text-slate-950">

@@ -80,8 +80,8 @@ export const AiAccountingHero = () => {
                 
                 {/* Brand Logo */}
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">A</span>
+                  <div className="w-6 h-6 rounded-lg overflow-hidden flex items-center justify-center shadow-sm">
+                    <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
                   </div>
                   <span className="text-sm font-bold text-slate-800 tracking-tight">AIBASS</span>
                 </div>

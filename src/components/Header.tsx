@@ -41,8 +41,8 @@ export const Header = () => {
           
           {/* Logo */}
           <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
-              <Sparkles className="h-5 w-5 text-white" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden shadow-sm">
+              <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
             </div>
             <span className="text-xl font-bold tracking-tight text-slate-900">AIBASS</span>
           </div>
