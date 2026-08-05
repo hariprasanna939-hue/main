@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, User, Mail, Phone, FileText, CheckCircle2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export const TrialFormModal = () => {
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState({
@@ -58,7 +60,8 @@ export const TrialFormModal = () => {
     // Simulate API call
     setTimeout(() => {
       setLoading(false);
-      setSubmitted(true);
+      close();
+      navigate("/thank-you");
     }, 1200);
   };
 

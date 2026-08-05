@@ -48,7 +48,7 @@ export const AiAccountingBottomBanner = () => {
               
               <Button
                 variant="outline"
-                onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
+                onClick={() => document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth" })}
                 className="w-full sm:w-auto border-slate-300 bg-white/50 hover:bg-slate-100/50 text-slate-750 font-bold h-12 px-8 rounded-full text-xs transition-all hover:-translate-y-0.5"
               >
                 View Pricing
