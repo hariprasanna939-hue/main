@@ -32,7 +32,10 @@ const EighthSection = () => {
             <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
           </Button>
           <Button
-            onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
+            onClick={() => {
+              const el = document.getElementById("pricing") || document.getElementById("pricing-section");
+              el?.scrollIntoView({ behavior: "smooth" });
+            }}
             variant="outline"
             className="h-12 rounded-full border-slate-300 bg-white/50 px-7 text-xs font-bold text-slate-750 shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-100/50"
           >

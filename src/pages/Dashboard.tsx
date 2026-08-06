@@ -195,8 +195,8 @@ const Dashboard = () => {
             </Button>
 
             <div className="flex min-w-0 items-center gap-3">
-              <div className="dashboard-light-logo flex h-10 w-10 items-center justify-center rounded-[14px]">
-                <Building2 className="h-5 w-5 text-slate-700" />
+              <div className="dashboard-light-logo flex h-10 w-10 items-center justify-center rounded-[14px] overflow-hidden">
+                <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">

@@ -14,8 +14,8 @@ const Footer = () => {
           {/* Brand Info */}
           <div className="space-y-5">
             <a href="/" className="flex items-center gap-2.5 hover:opacity-90">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm text-white animate-pulse">
-                <Sparkles className="h-4.5 w-4.5" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl overflow-hidden shadow-sm">
+                <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
               </div>
               <span className="text-xl font-extrabold tracking-tight text-slate-900">AIBASS</span>
             </a>
