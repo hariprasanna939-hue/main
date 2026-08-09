@@ -42,11 +42,15 @@ const razorpay = new Razorpay({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// CORS configuration for production
+// CORS configuration allowing local development and production origins
 const corsOptions = {
-  origin: process.env.DEV_MODE === 'true'
-    ? ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000']
-    : ['https://software.saaiss.in', 'https://www.software.saaiss.in'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'https://software.saaiss.in',
+    'https://www.software.saaiss.in'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
