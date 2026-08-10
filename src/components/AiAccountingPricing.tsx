@@ -7,6 +7,7 @@ export const AiAccountingPricing = () => {
   const navigate = useNavigate();
   const pricingTiers = [
     {
+      id: "trial",
       name: "30-Day Free Trial",
       price: "₹0",
       period: "per 30 days",
@@ -27,6 +28,7 @@ export const AiAccountingPricing = () => {
       badge: "",
     },
     {
+      id: "monthly",
       name: "Monthly Subscription",
       price: "₹1,770",
       period: "per month",
@@ -49,6 +51,7 @@ export const AiAccountingPricing = () => {
       selected: true,
     },
     {
+      id: "annual",
       name: "Annual Subscription",
       price: "₹19,116",
       period: "per year",
@@ -71,6 +74,7 @@ export const AiAccountingPricing = () => {
       badge: "MOST POPULAR",
     },
     {
+      id: "lifetime",
       name: "Lifetime Access",
       price: "₹53,100",
       period: "One-time",
@@ -153,7 +157,7 @@ export const AiAccountingPricing = () => {
 
                 {/* Button / CTA */}
                 <Button
-                  onClick={() => window.dispatchEvent(new CustomEvent("openTrialModal"))}
+                  onClick={() => navigate(`/auth?tab=signup&plan=${tier.id}`)}
                   className="w-full h-11 rounded-xl font-bold text-xs bg-slate-950 text-white hover:bg-slate-855 shadow-sm border border-slate-955 transition-colors mb-6"
                 >
                   {tier.cta}

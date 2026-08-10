@@ -42,6 +42,8 @@ export const API_ENDPOINTS = {
   AI: `${API_BASE_URL}/ai`,
   AI_INVOICE_OCR: `${API_BASE_URL}/ai/invoice-ocr`,
   AI_EXTRACT_TEXT: `${API_BASE_URL}/ai/extract-text`,
+  AI_CHAT_HISTORY: `${API_BASE_URL}/ai/chat-history`,
+  AI_CHAT_MESSAGE: `${API_BASE_URL}/ai/chat-message`,
 
   // Civil Engineering endpoints
   CIVIL_CPM_CALCULATE: `${API_BASE_URL}/civil-engineering/calculate-cpm`,

@@ -1,17 +1,24 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Building2, CreditCard, Lock, Mail, Shield, CheckCircle2, Sparkles, ArrowRight, Crown, Infinity as InfinityIcon, Zap, BarChart3 } from "lucide-react";
+import { 
+  Loader2, 
+  Check, 
+  Lock, 
+  Mail, 
+  Receipt, 
+  CreditCard, 
+  PackageCheck,
+  ArrowRight,
+  Star,
+  Quote,
+  Sparkles,
+  CheckCircle2
+} from "lucide-react";
 import { VoiceButton } from "@/components/ui/VoiceButton";
 import { API_ENDPOINTS, apiRequest } from "@/lib/api";
 import { isTrialExpired } from "@/lib/trial";
-import { motion } from "framer-motion";
-
+import { motion, AnimatePresence } from "framer-motion";
 
 interface RazorpayResponse {
   razorpay_order_id: string;
@@ -27,127 +34,91 @@ interface RazorpayOptions {
   description: string;
   order_id: string;
   handler: (response: RazorpayResponse) => void;
-  modal: {
-    ondismiss: () => void;
-  };
-  theme: {
-    color: string;
-  };
-  prefill?: {
-    name?: string;
-    email?: string;
-    contact?: string;
-  };
-  notes?: {
-    plan?: string;
-    planName?: string;
-  };
+  modal: { ondismiss: () => void };
+  theme: { color: string };
+  prefill?: { name?: string; email?: string; contact?: string };
+  notes?: { plan?: string; planName?: string };
 }
 
 declare global {
   interface Window {
-    Razorpay: new (options: RazorpayOptions) => {
-      open: () => void;
-    };
+    Razorpay: new (options: RazorpayOptions) => { open: () => void };
   }
 }
 
-// Subscription Plans Configuration
 type SubscriptionPlan = {
   id: string;
   name: string;
   price: number;
-  originalPrice?: number;
   gst: number;
   totalAmount: number;
   duration: string;
   description: string;
   features: string[];
-  icon: typeof Zap;
   popular: boolean;
-  savings?: string;
-  trialDays?: number;
 };
 
+// Enriched plans with detailed features for the right-side cards
 const subscriptionPlans = {
   trial: {
     id: "trial",
-    name: "30-Day Free Trial",
+    name: "30-Day Sandbox",
     price: 0,
     gst: 0,
     totalAmount: 0,
     duration: "30 days",
-    description: "Start now and explore the platform free for 30 days",
+    description: "Full access to test the platform.",
     features: [
-      "All core dashboard features",
-      "Database-backed trial access",
-      "Auto-logout after 30 days",
-      "Upgrade to paid plan anytime",
+      "Unlimited GST Invoicing",
+      "Real-time ledger sync",
+      "Standard email support"
     ],
-    icon: Sparkles,
     popular: false,
-    savings: "Free for 30 days",
-    trialDays: 30,
   },
   monthly: {
     id: "monthly",
-    name: "Monthly Subscription",
+    name: "Express Billing",
     price: 1500,
     gst: 270,
     totalAmount: 1770,
     duration: "month",
-    description: "Perfect for getting started",
+    description: "Perfect for growing small businesses.",
     features: [
-      "All basic features",
-      "Email support",
-      "1GB storage",
-      "Basic analytics",
-      "Up to 10 employees"
+      "Everything in Free Trial",
+      "Payment link generation",
+      "Basic inventory tracking"
     ],
-    icon: Zap,
-    popular: false
+    popular: false,
   },
   annual: {
     id: "annual",
-    name: "Annual Subscription",
+    name: "Pro ERP & Tax",
     price: 16200,
-    originalPrice: 18000,
     gst: 2916,
     totalAmount: 19116,
     duration: "year",
-    description: "Best value - Save 10%",
+    description: "Save 10%. Full automation suite.",
     features: [
-      "All premium features",
-      "Priority support",
-      "10GB storage",
-      "Advanced analytics",
-      "Custom reports",
-      "Up to 50 employees"
+      "e-Invoicing (IRN) & e-Way bills",
+      "Payroll & salary slip automation",
+      "Priority CA & tech support"
     ],
-    icon: Crown,
     popular: true,
-    savings: "Save ₹1,800"
   },
   lifetime: {
     id: "lifetime",
-    name: "Lifetime Access",
+    name: "Enterprise",
     price: 45000,
     gst: 8100,
     totalAmount: 53100,
     duration: "lifetime",
-    description: "One-time payment, forever access",
+    description: "One-time cost for unlimited scale.",
     features: [
-      "All features included",
-      "24/7 priority support",
-      "Unlimited storage",
-      "Advanced analytics",
-      "Custom reports",
-      "Unlimited employees",
-      "Free updates forever"
+      "Multi-branch & warehouse prep",
+      "Custom API & POS integrations",
+      "Dedicated account manager"
     ],
-    icon: InfinityIcon,
     popular: false,
-    savings: "Best long-term value"
   }
 } satisfies Record<string, SubscriptionPlan>;
 
@@ -157,35 +128,27 @@ const Auth = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+  
   const [loading, setLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("signin");
+  const [view, setView] = useState<"signin" | "signup">("signin");
+  const [selectedPlan, setSelectedPlan] = useState<PlanKey>("trial");
 
-  const [selectedPlan, setSelectedPlan] = useState<PlanKey>("monthly");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [loginRole, setLoginRole] = useState<"admin" | "instore">("admin");
+  const [signupRole, setSignupRole] = useState<"admin" | "instore">("admin");
 
-  const [signInEmail, setSignInEmail] = useState("");
-  const [signInPassword, setSignInPassword] = useState("");
-  const [signUpEmail, setSignUpEmail] = useState("");
-  const [signUpPassword, setSignUpPassword] = useState("");
-  const [signUpName, setSignUpName] = useState("");
-
-
-
-  // Load Razorpay script
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
     const plan = params.get("plan") as PlanKey | null;
 
-    if (tab === "signup" || tab === "signin") {
-      setActiveTab(tab);
-    }
-
+    if (tab === "signup" || tab === "signin") setView(tab);
     if (plan && plan in subscriptionPlans) {
       setSelectedPlan(plan);
-      if (plan === "trial") {
-        setActiveTab("signup");
-      }
+      if (plan === "trial") setView("signup");
     }
   }, [location.search]);
 
@@ -194,9 +157,7 @@ const Auth = () => {
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
     document.body.appendChild(script);
-    return () => {
-      document.body.removeChild(script);
-    };
+    return () => { document.body.removeChild(script); };
   }, []);
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -205,37 +166,29 @@ const Auth = () => {
     try {
       const res = await apiRequest(API_ENDPOINTS.SIGNIN, {
         method: "POST",
-        body: JSON.stringify({ email: signInEmail, password: signInPassword }),
+        body: JSON.stringify({ email, password, role: loginRole }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
 
       if (isTrialExpired(data.user)) {
-        toast({
-          variant: "destructive",
-          title: "Free trial ended",
-          description: "Your trial is over. Please choose a paid plan to continue.",
+        toast({ 
+          variant: "destructive", 
+          title: "Subscription Required", 
+          description: "Your trial has expired. Please subscribe to continue accessing your ledgers." 
         });
-        setActiveTab("signup");
+        setView("signup");
         setSelectedPlan("monthly");
         return;
       }
 
       localStorage.setItem("token", data.token);
-      toast({
-        title: "Welcome! 🎉",
-        description: "Login successful! Redirecting to dashboard..."
-      });
-      setSignInEmail("");
-      setSignInPassword("");
-      setTimeout(() => navigate("/dashboard"), 1500);
+      setTimeout(() => navigate("/dashboard"), 500);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
-      toast({
-        variant: "destructive",
-        title: "Login Failed",
-        description: errorMessage
+      toast({ 
+        variant: "destructive", 
+        title: "Sign In Failed", 
+        description: err instanceof Error ? err.message : "Invalid credentials." 
       });
     } finally {
       setLoading(false);
@@ -244,16 +197,10 @@ const Auth = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!signUpEmail || !signUpPassword) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please fill all fields"
-      });
-      return;
+    if (!email || !password) {
+      return toast({ variant: "destructive", title: "Required", description: "Email and password are required." });
     }
-
+    
     setPaymentLoading(true);
 
     try {
@@ -261,579 +208,520 @@ const Auth = () => {
         setLoading(true);
         const trialRes = await apiRequest(API_ENDPOINTS.SIGNUP_TRIAL, {
           method: "POST",
-          body: JSON.stringify({
-            email: signUpEmail,
-            password: signUpPassword,
-            name: signUpName || signUpEmail.split("@")[0],
-          }),
+          body: JSON.stringify({ email, password, name: name || email.split("@")[0], role: signupRole }),
         });
-
         const trialData = await trialRes.json();
         if (!trialRes.ok) throw new Error(trialData.message);
 
         localStorage.setItem("token", trialData.token);
-        setLoading(false);
-        setPaymentLoading(false);
-        toast({
-          title: "Free trial started",
-          description: "Your 30-day trial is active. Redirecting to dashboard...",
-        });
-        setTimeout(() => navigate("/dashboard"), 1500);
+        toast({ title: "Welcome!", description: "Initializing your billing workspace..." });
+        setTimeout(() => navigate("/dashboard"), 500);
         return;
       }
 
       const orderRes = await apiRequest(API_ENDPOINTS.CREATE_ORDER, {
         method: "POST",
-        body: JSON.stringify({
-          email: signUpEmail,
-          plan: selectedPlan
-        }),
+        body: JSON.stringify({ email, plan: selectedPlan }),
       });
-
       const orderData = await orderRes.json();
       if (!orderRes.ok) throw new Error(orderData.message);
 
-      console.log('📦 Order Data Received:', {
-        orderId: orderData.orderId,
-        amount: orderData.amount,
-        amountInRupees: orderData.amount / 100,
-        plan: selectedPlan,
-        planDetails: subscriptionPlans[selectedPlan]
-      });
-
       if (orderData.devMode) {
-        try {
-          setLoading(true);
-          const verifyRes = await apiRequest(API_ENDPOINTS.VERIFY_PAYMENT, {
-            method: "POST",
-            body: JSON.stringify({
-              razorpay_order_id: orderData.orderId,
-              razorpay_payment_id: "dev_payment_" + Date.now(),
-              razorpay_signature: "dev_signature",
-              email: signUpEmail,
-              password: signUpPassword,
-            }),
-          });
-
-          const verifyData = await verifyRes.json();
-          if (!verifyRes.ok) throw new Error(verifyData.message);
-
-          localStorage.setItem("token", verifyData.token);
-          toast({
-            title: "Success! 🚀",
-            description: `Account created with ${subscriptionPlans[selectedPlan].name} plan! Welcome aboard!`,
-          });
-          setTimeout(() => navigate("/dashboard"), 1500);
-          return;
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : "Development signup failed";
-          toast({
-            variant: "destructive",
-            title: "Development Mode Error",
-            description: errorMessage,
-          });
-          return;
-        } finally {
-          setLoading(false);
-          setPaymentLoading(false);
-        }
+        setLoading(true);
+        const verifyRes = await apiRequest(API_ENDPOINTS.VERIFY_PAYMENT, {
+          method: "POST",
+          body: JSON.stringify({
+            razorpay_order_id: orderData.orderId,
+            razorpay_payment_id: "dev_payment_" + Date.now(),
+            razorpay_signature: "dev_signature",
+            email, password, name: name || email.split('@')[0], plan: selectedPlan, role: signupRole
+          }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyRes.ok) throw new Error(verifyData.message);
+        
+        localStorage.setItem("token", verifyData.token);
+        setTimeout(() => navigate("/dashboard"), 500);
+        return;
       }
 
       const options: RazorpayOptions = {
         key: orderData.key,
         amount: orderData.amount,
         currency: orderData.currency,
-        name: "SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED",
-        description: `${subscriptionPlans[selectedPlan].name} - ₹${subscriptionPlans[selectedPlan].totalAmount}`,
+        name: "SHREE ANDAL AI",
+        description: `Billing License - ${subscriptionPlans[selectedPlan].name}`,
         order_id: orderData.orderId,
         handler: async function (response: RazorpayResponse) {
           try {
             setLoading(true);
             const verifyRes = await apiRequest(API_ENDPOINTS.VERIFY_PAYMENT, {
               method: "POST",
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-                email: signUpEmail,
-                password: signUpPassword,
-                plan: selectedPlan,
-                name: signUpName || signUpEmail.split('@')[0]
-              }),
+              body: JSON.stringify({ ...response, email, password, plan: selectedPlan, name: name || email.split('@')[0], role: signupRole }),
             });
-
             const verifyData = await verifyRes.json();
             if (!verifyRes.ok) throw new Error(verifyData.message);
-
+            
             localStorage.setItem("token", verifyData.token);
-            toast({
-              title: "Welcome! 🎉",
-              description: `Payment successful! Your ${subscriptionPlans[selectedPlan].name} account has been created.`,
-            });
-            setTimeout(() => navigate("/dashboard"), 1500);
+            setTimeout(() => navigate("/dashboard"), 500);
           } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : "Payment verification failed";
-            toast({
-              variant: "destructive",
-              title: "Payment Verification Failed",
-              description: errorMessage,
-            });
+            toast({ variant: "destructive", title: "Payment Error", description: err instanceof Error ? err.message : "Verification failed" });
           } finally {
             setLoading(false);
             setPaymentLoading(false);
           }
         },
-        modal: {
-          ondismiss: function () {
-            setPaymentLoading(false);
-            toast({
-              variant: "destructive",
-              title: "Payment Cancelled",
-              description: "Signup process was cancelled",
-            });
-          },
-        },
-        prefill: {
-          name: signUpName || signUpEmail.split('@')[0],
-          email: signUpEmail,
-        },
-        notes: {
-          plan: selectedPlan,
-          planName: subscriptionPlans[selectedPlan].name
-        },
-        theme: {
-          color: "#3B82F6",
-        },
+        modal: { ondismiss: () => setPaymentLoading(false) },
+        prefill: { email, name: name || email.split('@')[0] },
+        theme: { color: "#006aff" },
       };
-
-      const rzp = new window.Razorpay(options);
-      rzp.open();
+      new window.Razorpay(options).open();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
-      toast({ variant: "destructive", title: "Error", description: errorMessage });
+      toast({ variant: "destructive", title: "Error", description: err instanceof Error ? err.message : "An error occurred." });
       setPaymentLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-  };
-
   const planEntries = Object.entries(subscriptionPlans) as Array<[PlanKey, SubscriptionPlan]>;
-  const selectedPlanData = subscriptionPlans[selectedPlan];
-  const features = [
-    { icon: Shield, text: "Bank-grade security" },
-    { icon: CheckCircle2, text: "Instant activation" },
-    { icon: Sparkles, text: "Premium onboarding" },
-    { icon: BarChart3, text: "Live finance intelligence" },
-  ];
-  const trustCards = [
-    { label: "Protected sessions", value: "256-bit" },
-    { label: "Support response", value: "24/7" },
-    { label: "Activation speed", value: "< 2 min" },
-  ];
-
-  const floatingSignals = [
-    { label: "Status", value: "Secure", className: "top-24 left-8 hidden xl:flex" },
-    { label: "Latency", value: "Fast", className: "bottom-28 left-14 hidden xl:flex" },
-    { label: "Access", value: "Managed", className: "top-36 right-10 hidden xl:flex" },
-    { label: "Invoice AI", value: "Auto-matched", className: "top-56 left-20 hidden 2xl:flex" },
-    { label: "GST Status", value: "Ready to file", className: "top-52 right-24 hidden 2xl:flex" },
-    { label: "Tax Alert", value: "No issues", className: "bottom-44 right-8 hidden xl:flex" },
-    { label: "Plan Sync", value: "Active", className: "bottom-16 left-32 hidden 2xl:flex" },
-  ];
 
   return (
-    <div className="auth-page relative min-h-screen overflow-hidden text-slate-950">
-      <div className="auth-orb auth-orb-a pointer-events-none" />
-      <div className="auth-orb auth-orb-b pointer-events-none" />
-      <div className="auth-grid-overlay pointer-events-none" />
-
-      {floatingSignals.map((signal, index) => (
-        <motion.div
-          key={signal.label}
-          initial={{ opacity: 0, scale: 0.94, y: 12 }}
-          animate={{ opacity: 1, scale: 1, y: [0, -8, 0] }}
-          transition={{
-            opacity: { delay: 0.3 + index * 0.08, duration: 0.35 },
-            scale: { delay: 0.3 + index * 0.08, duration: 0.35 },
-            y: { delay: index * 0.25, duration: 4, repeat: Infinity, ease: "easeInOut" },
-          }}
-          className={`auth-floating-chip fixed z-[1] hidden items-center gap-3 rounded-[24px] px-4 py-3 xl:flex ${signal.className}`}
-        >
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.6)]" />
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{signal.label}</p>
-            <p className="text-sm font-semibold text-slate-950">{signal.value}</p>
-          </div>
-        </motion.div>
-      ))}
-
-      <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 pb-6 pt-5 sm:px-6">
-        <div className="flex items-center gap-3">
-          <div className="auth-logo flex h-12 w-12 items-center justify-center rounded-[18px] overflow-hidden">
-            <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold tracking-tight text-slate-950 sm:text-base">
-              SHREE ANDAL AI SOFTWARE SOLUTIONS
-            </h1>
-            <p className="text-xs font-medium text-slate-600">Secure finance access and subscription management</p>
-          </div>
-        </div>
-
-        <div className="hidden items-center gap-3 rounded-full border border-white/70 bg-white/55 px-3 py-2 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur-xl md:flex">
-          <Shield className="h-4 w-4 text-sky-700" />
-          <span className="text-xs font-semibold text-slate-700">Enterprise-grade authentication</span>
-        </div>
-      </header>
-
-      <main className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 pb-14 pt-2 sm:px-6 lg:grid-cols-[1fr_0.95fr] lg:items-start lg:gap-10">
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55 }}
-          className="space-y-8 pt-6 lg:pt-12"
-        >
-          <div className="max-w-2xl">
-            <div className="auth-pill inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-600">
-              <Sparkles className="h-4 w-4 text-sky-700" />
-              Andal-inspired access experience
+    <div className="min-h-screen w-full flex bg-white font-sans text-[#333] selection:bg-[#006aff]/20 selection:text-[#006aff]">
+      
+      {/* LEFT SIDE - AUTHENTICATION FORM */}
+      <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col min-h-screen relative z-20 bg-white shadow-[10px_0_30px_rgba(0,0,0,0.03)] border-r border-[#eee]">
+        
+        {/* Header */}
+        <div className="px-8 py-6 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 cursor-pointer">
+            <div className="w-8 h-8 bg-[#006aff] rounded-[6px] flex items-center justify-center text-white font-bold text-lg shadow-sm">
+              S
             </div>
-            <h2 className="mt-6 text-5xl font-semibold tracking-tight text-slate-950 md:text-6xl lg:text-7xl">
-              Calm, premium access for modern finance teams.
-            </h2>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">
-              Sign in or create an account with a design that feels clean, refined, and intentionally simple.
-              Pricing is handled through distinct glass cards so each plan feels clear and separate.
-            </p>
+            <div className="flex flex-col">
+              <span className="font-bold text-[16px] tracking-tight text-[#111] leading-none">SHREE ANDAL AI</span>
+              <span className="text-[10px] text-[#006aff] font-bold uppercase tracking-wider mt-0.5">Billing & Accounts</span>
+            </div>
           </div>
-
-          <div className="grid max-w-2xl gap-4 sm:grid-cols-3">
-            {trustCards.map((card, index) => (
-              <motion.div
-                key={card.label}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.08 + 0.12 }}
-                className="auth-metric rounded-[28px] p-5"
-              >
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{card.label}</p>
-                <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{card.value}</p>
-              </motion.div>
-            ))}
+          
+          {/* Mobile Toggle */}
+          <div className="lg:hidden text-[13px] font-medium">
+            {view === "signin" ? (
+              <span className="text-[#555]">New? <button onClick={() => {setView("signup"); setEmail(""); setPassword("");}} className="text-[#006aff] hover:underline font-semibold">Sign Up</button></span>
+            ) : (
+              <span className="text-[#555]">Registered? <button onClick={() => {setView("signin"); setEmail(""); setPassword("");}} className="text-[#006aff] hover:underline font-semibold">Sign In</button></span>
+            )}
           </div>
+        </div>
 
-          <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
-            {features.map((feature, index) => (
-              <motion.div
-                key={feature.text}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.25 + index * 0.06 }}
-                className="auth-feature flex items-center gap-3 rounded-[24px] p-4"
-              >
-                <div className="auth-feature-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px]">
-                  <feature.icon className="h-5 w-5 text-slate-900" />
-                </div>
-                <span className="text-sm font-semibold text-slate-700">{feature.text}</span>
-              </motion.div>
-            ))}
-          </div>
-        </motion.section>
-
-        <motion.section
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.65, delay: 0.1 }}
-          className="lg:pt-6"
-        >
-          <Card className="auth-panel overflow-hidden rounded-[36px] border-white/70 bg-white/78 shadow-[0_35px_90px_rgba(15,23,42,0.14)] backdrop-blur-2xl">
-            <CardHeader className="space-y-3 border-b border-slate-200/70 bg-white/35 px-8 py-8">
-              <div className="flex items-center gap-3">
-                <div className="auth-logo flex h-12 w-12 items-center justify-center rounded-[18px] overflow-hidden">
-                  <img src="/brand-logo.png" alt="Logo" className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <CardTitle className="text-2xl font-semibold tracking-tight text-slate-950">
-                    Access your account
-                  </CardTitle>
-                  <CardDescription className="mt-1 text-sm text-slate-600">
-                    Sign in or create a subscription in a single clean surface.
-                  </CardDescription>
-                </div>
+        {/* Form Area */}
+        <div className="flex-1 flex flex-col justify-center px-8 md:px-14 lg:px-16 pb-12 w-full max-w-[560px] mx-auto overflow-y-auto [&::-webkit-scrollbar]:hidden">
+          
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={view}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="w-full"
+            >
+              <div className="mb-8">
+                <h1 className="text-[26px] font-bold text-[#111] tracking-tight mb-2">
+                  {view === "signin" ? "Sign in to your portal" : "Create your account"}
+                </h1>
+                <p className="text-[14px] text-[#555] leading-relaxed">
+                  {view === "signin" 
+                    ? "Manage your invoices, track receivables, and automate your GST compliance." 
+                    : "Create professional GST invoices & manage inventory in under 2 minutes. No credit card required."}
+                </p>
               </div>
-            </CardHeader>
 
-            <CardContent className="px-8 py-8">
-              <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-                <TabsList className="grid h-12 w-full grid-cols-2 rounded-full bg-slate-100 p-1">
-                  <TabsTrigger
-                    value="signin"
-                    className="rounded-full text-sm font-semibold text-slate-600 transition-all data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
-                  >
-                    Sign In
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="signup"
-                    className="rounded-full text-sm font-semibold text-slate-600 transition-all data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
-                  >
-                    Sign Up
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="signin" className="mt-8 space-y-6">
+              {view === "signin" ? (
+                /* --- SIGN IN FORM --- */
+                <div className="flex flex-col h-full">
                   <form onSubmit={handleSignIn} className="space-y-5">
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                        <Mail className="h-4 w-4 text-sky-700" />
-                        Email Address
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <Input
+                    {/* Role Selector Grid */}
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Choose portal access</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setLoginRole("admin")}
+                          className={`p-3 rounded-[4px] border text-center transition-all ${
+                            loginRole === "admin"
+                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
+                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
+                          }`}
+                        >
+                          <div className="text-[13px]">Admin Portal</div>
+                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Full CFO access</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLoginRole("instore")}
+                          className={`p-3 rounded-[4px] border text-center transition-all ${
+                            loginRole === "instore"
+                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
+                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
+                          }`}
+                        >
+                          <div className="text-[13px]">In-Store POS</div>
+                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Cashier access</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Business email address</label>
+                      <div className="relative flex items-center">
+                        <Mail className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
+                        <input
                           type="email"
-                          value={signInEmail}
-                          onChange={(e) => setSignInEmail(e.target.value)}
-                          placeholder="you@example.com"
-                          className="h-12 rounded-[16px] border-slate-200 bg-white/90 text-slate-950 placeholder:text-slate-400 focus-visible:ring-sky-500"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full h-11 pl-10 pr-10 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
+                          placeholder="name@company.com"
                           required
                         />
-                        <VoiceButton
-                          onTranscript={(text) => setSignInEmail(text)}
-                          onClear={() => setSignInEmail("")}
-                          language="en-US"
-                          size="md"
+                        <div className="absolute right-2">
+                          <VoiceButton onTranscript={setEmail} onClear={() => setEmail("")} size="sm" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="block text-[13px] font-bold text-[#333]">Password</label>
+                        <a href="#" className="text-[12px] font-semibold text-[#006aff] hover:underline">Forgot password?</a>
+                      </div>
+                      <div className="relative flex items-center">
+                        <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full h-11 pl-10 pr-4 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
+                          placeholder="••••••••"
+                          required
                         />
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                        <Lock className="h-4 w-4 text-sky-700" />
-                        Password
-                      </Label>
-                      <Input
-                        type="password"
-                        value={signInPassword}
-                        onChange={(e) => setSignInPassword(e.target.value)}
-                        placeholder="Enter your password"
-                        className="h-12 rounded-[16px] border-slate-200 bg-white/90 text-slate-950 placeholder:text-slate-400 focus-visible:ring-sky-500"
-                        required
-                      />
-                    </div>
-
-                    <Button
+                    <button
                       type="submit"
-                      className="h-12 w-full rounded-full bg-slate-950 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(15,23,42,0.16)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
                       disabled={loading}
+                      className="w-full h-11 mt-2 bg-[#006aff] hover:bg-[#005cdb] text-white font-bold text-[15px] rounded-[4px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70 shadow-sm"
                     >
-                      {loading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Signing In
-                        </>
-                      ) : (
-                        <>
-                          Sign In
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </>
-                      )}
-                    </Button>
+                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+                    </button>
                   </form>
-                </TabsContent>
 
-                <TabsContent value="signup" className="mt-8 space-y-6">
-                  <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center justify-between gap-3">
+                  {/* START FREE TRIAL PROMO BOX (Under Sign In) */}
+                  <div className="mt-8 pt-7 border-t border-[#eee]">
+                    <div className="bg-[#f4f9ff] border border-[#cce3ff] rounded-[6px] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_2px_10px_rgba(0,106,255,0.05)]">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Free trial</p>
-                        <p className="mt-1 text-base font-semibold text-slate-950">Start 30 days free, then upgrade when ready.</p>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Sparkles className="w-4 h-4 text-[#006aff]" />
+                          <h4 className="text-[14px] font-bold text-[#111]">New to SHREE ANDAL AI?</h4>
+                        </div>
+                        <p className="text-[13px] text-[#555] leading-snug">
+                          Join thousands of businesses managing their GST billing and accounting with us.
+                        </p>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="rounded-full border-slate-200 bg-white px-4 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-                        onClick={() => setSelectedPlan("trial")}
+                      <button
+                        onClick={() => {
+                          setView("signup");
+                          setSelectedPlan("trial");
+                          setEmail("");
+                          setPassword("");
+                        }}
+                        className="shrink-0 w-full sm:w-auto px-5 py-2.5 bg-white border border-[#006aff] text-[#006aff] text-[13px] font-bold rounded-[4px] hover:bg-[#006aff] hover:text-white transition-all shadow-sm"
                       >
-                        Use Trial
-                      </Button>
+                        Start Free Trial
+                      </button>
                     </div>
                   </div>
-
-                  <div className="auth-selected-plan rounded-[26px] p-4">
-                    <div className="flex items-center justify-between gap-3">
+                </div>
+              ) : (
+                /* --- SIGN UP FORM --- */
+                <form onSubmit={handleSignUp} className="space-y-6">
+                  
+                  {/* Small Plan Indicator (Left side representation) */}
+                  <div>
+                    <label className="block text-[13px] font-bold text-[#333] mb-2">Selected Plan</label>
+                    <div className="p-3 border border-[#006aff] bg-[#f2f8ff] rounded-[6px] flex items-center justify-between shadow-[0_0_0_1px_rgba(0,106,255,0.2)]">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                          Selected plan
-                        </p>
-                        <p className="mt-1 text-lg font-semibold text-slate-950">{selectedPlanData.name}</p>
+                        <h4 className="text-[13px] font-bold text-[#006aff]">{subscriptionPlans[selectedPlan].name}</h4>
+                        <p className="text-[11px] text-[#006aff]/80 font-medium">{subscriptionPlans[selectedPlan].description}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xl font-semibold text-slate-950">₹{selectedPlanData.totalAmount.toLocaleString()}</p>
-                        <p className="text-xs text-slate-500">
-                          {selectedPlanData.duration === "lifetime" ? "One-time" : `per ${selectedPlanData.duration}`}
-                        </p>
+                        <p className="text-[16px] font-black text-[#111]">{selectedPlan === "trial" ? "Free" : `₹${subscriptionPlans[selectedPlan].totalAmount.toLocaleString()}`}</p>
+                        {selectedPlan !== "trial" && <p className="text-[10px] text-[#777] uppercase font-bold">/{subscriptionPlans[selectedPlan].duration}</p>}
                       </div>
                     </div>
+                    <p className="text-[11px] text-[#777] mt-2 block lg:hidden">* Swipe or scroll on desktop to compare other plans.</p>
                   </div>
 
-                  <form onSubmit={handleSignUp} className="space-y-5">
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                        <Mail className="h-4 w-4 text-sky-700" />
-                        Email Address
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <Input
+                  <div className="space-y-4 pt-2">
+                    {/* Role Selector Grid */}
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Choose your business role</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setSignupRole("admin")}
+                          className={`p-3 rounded-[4px] border text-center transition-all ${
+                            signupRole === "admin"
+                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
+                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
+                          }`}
+                        >
+                          <div className="text-[13px]">Admin Portal</div>
+                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Management & P&L</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSignupRole("instore")}
+                          className={`p-3 rounded-[4px] border text-center transition-all ${
+                            signupRole === "instore"
+                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
+                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
+                          }`}
+                        >
+                          <div className="text-[13px]">In-Store POS</div>
+                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Cashier Billing</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Business email address</label>
+                      <div className="relative flex items-center">
+                        <Mail className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
+                        <input
                           type="email"
-                          value={signUpEmail}
-                          onChange={(e) => setSignUpEmail(e.target.value)}
-                          placeholder="you@example.com"
-                          className="h-12 rounded-[16px] border-slate-200 bg-white/90 text-slate-950 placeholder:text-slate-400 focus-visible:ring-sky-500"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full h-11 pl-10 pr-10 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
+                          placeholder="name@company.com"
                           required
                         />
-                        <VoiceButton
-                          onTranscript={(text) => setSignUpEmail(text)}
-                          onClear={() => setSignUpEmail("")}
-                          language="en-US"
-                          size="md"
-                        />
+                        <div className="absolute right-2">
+                          <VoiceButton onTranscript={setEmail} onClear={() => setEmail("")} size="sm" />
+                        </div>
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                        <Lock className="h-4 w-4 text-sky-700" />
-                        Password
-                      </Label>
-                      <Input
-                        type="password"
-                        value={signUpPassword}
-                        onChange={(e) => setSignUpPassword(e.target.value)}
-                        placeholder="Create a strong password"
-                        className="h-12 rounded-[16px] border-slate-200 bg-white/90 text-slate-950 placeholder:text-slate-400 focus-visible:ring-sky-500"
-                        required
-                      />
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Password</label>
+                      <div className="relative flex items-center">
+                        <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full h-11 pl-10 pr-4 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
+                          placeholder="Create a strong password"
+                          required
+                        />
+                      </div>
                     </div>
+                  </div>
 
-                    <Button
-                      type="submit"
-                      className="h-12 w-full rounded-full bg-slate-950 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(15,23,42,0.16)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
-                      disabled={loading || paymentLoading}
-                    >
-                      {paymentLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Processing Payment
-                        </>
-                      ) : loading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Creating Account
-                        </>
-                      ) : selectedPlan === "trial" ? (
-                        <>
-                          <Sparkles className="mr-2 h-4 w-4" />
-                          Start 30-Day Free Trial
-                        </>
-                      ) : (
-                        <>
-                          <CreditCard className="mr-2 h-4 w-4" />
-                          Pay ₹{selectedPlanData.totalAmount.toLocaleString()} & Create Account
-                        </>
-                      )}
-                    </Button>
-                  </form>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </motion.section>
-      </main>
+                  <button
+                    type="submit"
+                    disabled={loading || paymentLoading}
+                    className={`w-full h-11 text-white font-bold text-[15px] rounded-[4px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70 shadow-sm mt-2 ${
+                      selectedPlan === 'trial' ? 'bg-[#006aff] hover:bg-[#005cdb]' : 'bg-[#00b365] hover:bg-[#009c58]'
+                    }`}
+                  >
+                    {paymentLoading ? (
+                      <><Loader2 className="w-5 h-5 animate-spin" /> Processing Payment...</>
+                    ) : loading ? (
+                      <><Loader2 className="w-5 h-5 animate-spin" /> Provisioning Account...</>
+                    ) : selectedPlan === "trial" ? (
+                      "Start 30-Day Free Trial"
+                    ) : (
+                      <><Lock className="w-4 h-4" /> Pay ₹{subscriptionPlans[selectedPlan].totalAmount.toLocaleString()} securely</>
+                    )}
+                  </button>
 
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-14 sm:px-6">
-        <div className="mb-5 flex items-end justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Pricing</p>
-            <h3 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
-              Choose a plan that feels as clear as the interface.
-            </h3>
-          </div>
-          <p className="hidden max-w-md text-sm text-slate-600 md:block">
-            Each plan is shown as its own card so pricing stays readable, distinct, and easy to compare.
-          </p>
+                  <p className="text-[11.5px] text-[#777] text-center mt-3 font-medium">
+                    By proceeding, you agree to our <a href="#" className="text-[#006aff] hover:underline">Terms of Service</a> & <a href="#" className="text-[#006aff] hover:underline">Privacy Policy</a>.
+                  </p>
+                </form>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* RIGHT SIDE - DYNAMIC SHOWCASE / PRICING PANEL (Desktop Only) */}
+      <div className="hidden lg:flex flex-1 flex-col bg-[#f9fafd] relative overflow-hidden">
+        
+        {/* Toggle link Top Right */}
+        <div className="absolute top-6 right-8 text-[14px] font-medium z-30 flex items-center gap-3 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full border border-[#eee] shadow-sm">
+          {view === "signin" ? (
+            <>
+              <span className="text-[#555]">Need billing software?</span>
+              <button onClick={() => {setView("signup"); setEmail(""); setPassword("");}} className="text-[#006aff] font-bold hover:underline">Start Free Trial</button>
+            </>
+          ) : (
+            <>
+              <span className="text-[#555]">Already registered?</span>
+              <button onClick={() => {setView("signin"); setEmail(""); setPassword("");}} className="text-[#006aff] font-bold hover:underline">Sign In</button>
+            </>
+          )}
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-4">
-          {planEntries.map(([key, plan], index) => {
-            const PlanIcon = plan.icon;
-            const active = selectedPlan === key;
+        {/* Ambient background accents */}
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-bl from-[#dbebff] to-transparent rounded-full opacity-60 translate-x-[30%] -translate-y-[30%] pointer-events-none z-0" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-[#fde9e8] to-transparent rounded-full opacity-50 -translate-x-[30%] translate-y-[30%] pointer-events-none z-0" />
 
-            return (
-              <motion.button
-                key={key}
-                type="button"
-                onClick={() => setSelectedPlan(key)}
-                initial={{ opacity: 0, y: 18 }}
-                animate={{
-                  opacity: 1,
-                  y: active ? -6 : 0,
-                  scale: active ? 1.015 : 1,
-                  boxShadow: active
-                    ? "0 0 0 1px rgba(14,165,233,0.35), 0 24px 64px rgba(14,165,233,0.26), 0 0 36px rgba(56,189,248,0.22)"
-                    : "0 18px 50px rgba(15,23,42,0.08)",
-                }}
-                transition={{ delay: index * 0.08 }}
-                whileHover={{ y: active ? -8 : -4, scale: active ? 1.02 : 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                className={`auth-pricing-card text-left ${active ? "auth-pricing-card-active" : ""}`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className={`auth-plan-icon ${active ? "auth-plan-icon-active" : ""}`}>
-                    <PlanIcon className="h-5 w-5 text-white" />
-                  </div>
-                  {plan.popular && <span className="auth-plan-badge">Most Popular</span>}
+        <AnimatePresence mode="wait">
+          {view === "signin" ? (
+            /* --- RIGHT SIDE: FEATURE SHOWCASE (FOR SIGN IN) --- */
+            <motion.div 
+              key="showcase"
+              initial={{ opacity: 0, filter: "blur(4px)" }}
+              animate={{ opacity: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, filter: "blur(4px)" }}
+              transition={{ duration: 0.3 }}
+              className="flex-1 flex flex-col justify-center items-center p-12 z-10 w-full max-w-[600px] mx-auto"
+            >
+              <div className="flex items-center gap-2 mb-8 bg-white px-4 py-2 rounded-full shadow-sm border border-[#eee]">
+                <div className="flex text-[#f59e0b]">
+                  <Star className="w-4 h-4 fill-current" />
+                  <Star className="w-4 h-4 fill-current" />
+                  <Star className="w-4 h-4 fill-current" />
+                  <Star className="w-4 h-4 fill-current" />
+                  <Star className="w-4 h-4 fill-current" />
                 </div>
+                <span className="text-[12px] font-bold text-[#333]">Trusted by 10,000+ businesses</span>
+              </div>
 
-                {active && <div className="auth-pricing-glow" aria-hidden="true" />}
+              <div className="text-center mb-10">
+                <h2 className="text-[32px] font-black text-[#111] leading-tight mb-4 tracking-tight">
+                  Automated Billing &<br />e-Invoicing Software
+                </h2>
+                <p className="text-[16px] text-[#555] leading-relaxed font-medium">
+                  Create professional GST invoices, track outstanding receivables, and automate customer payment links instantly.
+                </p>
+              </div>
 
-                <div className="mt-6 flex items-start justify-between gap-4">
+              <div className="space-y-4 w-full">
+                <div className="bg-white p-5 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#eee] flex gap-4 items-start hover:-translate-y-1 transition-transform duration-300">
+                  <div className="w-[42px] h-[42px] rounded-lg bg-[#e8f2ff] flex items-center justify-center shrink-0">
+                    <Receipt className="w-5 h-5 text-[#006aff]" />
+                  </div>
                   <div>
-                    <h4 className="text-xl font-semibold tracking-tight text-slate-950">{plan.name}</h4>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{plan.description}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-3xl font-semibold tracking-tight text-slate-950">₹{plan.totalAmount.toLocaleString()}</p>
-                    <p className="text-xs text-slate-500">{plan.duration === "lifetime" ? "One-time" : `per ${plan.duration}`}</p>
+                    <h4 className="text-[15px] font-bold text-[#222] mb-1">Instant GST & e-Invoicing</h4>
+                    <p className="text-[13px] text-[#666] leading-relaxed">Generate IRN e-invoices, e-way bills, and automated tax calculations (CGST, SGST, IGST) in seconds.</p>
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-[22px] bg-slate-950 px-4 py-3 text-sm font-medium text-white">
-                  ₹{plan.price.toLocaleString()} + ₹{plan.gst.toLocaleString()} GST
+                <div className="bg-white p-5 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#eee] flex gap-4 items-start hover:-translate-y-1 transition-transform duration-300">
+                  <div className="w-[42px] h-[42px] rounded-lg bg-[#fde9e8] flex items-center justify-center shrink-0">
+                    <CreditCard className="w-5 h-5 text-[#f0483e]" />
+                  </div>
+                  <div>
+                    <h4 className="text-[15px] font-bold text-[#222] mb-1">Payment Links & Reminders</h4>
+                    <p className="text-[13px] text-[#666] leading-relaxed">Attach online payment links directly to bills and send automated payment reminders to get paid 3x faster.</p>
+                  </div>
                 </div>
+              </div>
 
-                <ul className="mt-5 space-y-2">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-3 text-sm text-slate-700">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-sky-700" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
+              <div className="mt-10 relative">
+                <Quote className="absolute -top-3 -left-4 w-8 h-8 text-[#006aff] opacity-10 rotate-180" />
+                <p className="text-[14px] italic text-[#555] font-medium leading-relaxed text-center px-6">
+                  "Switching to this platform completely changed how we handle our monthly billing. The automated GST reports alone save us hours every week."
+                </p>
+                <p className="text-[12px] font-bold text-[#333] text-center mt-3">— Finance Director, TechCorp India</p>
+              </div>
+            </motion.div>
+          ) : (
+            /* --- RIGHT SIDE: DETAILED PRICING GRID (FOR SIGN UP) --- */
+            <motion.div 
+              key="pricing"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="flex-1 flex flex-col justify-center items-center p-10 z-10 w-full max-w-[800px] mx-auto overflow-y-auto [&::-webkit-scrollbar]:hidden"
+            >
+              <div className="text-center mb-8">
+                <h2 className="text-[28px] font-black text-[#111] leading-tight mb-2 tracking-tight">
+                  Transparent pricing. No hidden fees.
+                </h2>
+                <p className="text-[15px] text-[#555] font-medium">
+                  Select a plan that fits your business needs. Your selection on the right automatically updates the form on the left.
+                </p>
+              </div>
 
-                <div className="mt-6 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {plan.savings ?? "Flexible access"}
-                  </span>
-                  <span className="text-xs font-semibold text-sky-700">
-                    {active ? "Selected" : "Select plan"}
-                  </span>
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
-      </section>
+              {/* 2x2 Pricing Grid */}
+              <div className="grid grid-cols-2 gap-4 w-full">
+                {planEntries.map(([key, plan]) => {
+                  const isSelected = selectedPlan === key;
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => setSelectedPlan(key as PlanKey)}
+                      className={`relative flex flex-col p-5 bg-white border-2 rounded-[12px] cursor-pointer transition-all duration-200 ${
+                        isSelected 
+                          ? 'border-[#006aff] shadow-[0_8px_30px_rgba(0,106,255,0.12)] -translate-y-1' 
+                          : 'border-transparent shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.06)] hover:border-[#dbebff]'
+                      }`}
+                    >
+                      {/* Popular Badge */}
+                      {plan.popular && (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#111] text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full shadow-md z-10">
+                          Most Popular
+                        </div>
+                      )}
+                      
+                      {/* Plan Header */}
+                      <div className="flex items-center justify-between mb-2 mt-2">
+                        <h3 className={`text-[15px] font-bold ${isSelected ? 'text-[#006aff]' : 'text-[#222]'}`}>{plan.name}</h3>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-[#006aff] bg-[#006aff]' : 'border-[#ddd]'}`}>
+                          {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
+                        </div>
+                      </div>
+                      
+                      <p className="text-[12px] text-[#666] mb-4 h-[36px]">{plan.description}</p>
+                      
+                      {/* Price Section */}
+                      <div className="mb-4 pb-4 border-b border-[#eee]">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[26px] font-black text-[#111] tracking-tight">
+                            {key === "trial" ? "Free" : `₹${(plan.totalAmount).toLocaleString()}`}
+                          </span>
+                          {key !== "trial" && <span className="text-[12px] text-[#777] font-bold uppercase">/{plan.duration}</span>}
+                        </div>
+                        {key !== "trial" && (
+                          <div className="text-[10px] font-bold text-[#888] mt-1">
+                            ₹{plan.price.toLocaleString()} + ₹{plan.gst.toLocaleString()} GST
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Features List */}
+                      <ul className="space-y-2.5 flex-1">
+                        {plan.features.map((feat, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <CheckCircle2 className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isSelected ? 'text-[#006aff]' : 'text-[#00b365]'}`} />
+                            <span className="text-[12px] font-medium text-[#444] leading-tight">{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
     </div>
   );
 };

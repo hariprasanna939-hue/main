@@ -19,14 +19,11 @@ export const TrialFormModal = () => {
   // Listen for the global open event dispatched by all CTA buttons
   useEffect(() => {
     const handler = () => {
-      setIsOpen(true);
-      setSubmitted(false);
-      setForm({ fullName: "", email: "", phone: "", business: "" });
-      setErrors({});
+      navigate("/auth?tab=signup&plan=trial");
     };
     window.addEventListener("openTrialModal", handler);
     return () => window.removeEventListener("openTrialModal", handler);
-  }, []);
+  }, [navigate]);
 
   // Lock body scroll when open
   useEffect(() => {

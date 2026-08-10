@@ -25,19 +25,17 @@ import {
   BarChart2,
   Bell,
   Menu,
-  Calendar,
   ArrowUpRight,
   ArrowDownRight,
-  AlertTriangle,
-  AlertCircle,
-  CheckCircle2,
   X,
   Send,
-  Bot
+  Bot,
+  Trash2,
+  History,
+  Plus
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { API_ENDPOINTS, API_BASE_URL, apiRequest } from "@/lib/api";
@@ -50,6 +48,7 @@ type UserProfile = {
   id: string;
   email: string;
   name?: string;
+  role?: "admin" | "instore";
   subscriptionStatus?: "pending" | "active";
   subscriptionPlan?: "trial" | "monthly" | "annual" | "lifetime";
   subscriptionAmount?: number;
@@ -78,7 +77,7 @@ const dashboardModules: DashboardModule[] = [
   { title: "Payroll Automation", description: "Manage employee salaries, deductions, and salary slips.", output: "", icon: Users, path: "/payroll" },
   { title: "Tax & GST Management", description: "Calculate and manage GST, CGST, SGST, and IGST.", output: "", icon: FileText, path: "/tax-gst" },
   { title: "Balance Sheet", description: "Generate balance sheets with assets, liabilities, and equity.", output: "", icon: BarChart3, path: "/balance-sheet" },
-  { title: "Profit & Loss Statement", description: "Create P&L statements with income and expense analysis.", output: "", icon: TrendingUp, path: "/profit-loss" },
+  { title: "Profit & Loss", description: "Create P&L statements with income and expense analysis.", output: "", icon: TrendingUp, path: "/profit-loss" },
   { title: "Cash Flow Prediction", description: "AI-powered forecasting for next 6 months.", output: "", icon: FileSpreadsheet, path: "/cashflow" },
   { title: "Cash Flow Statement", description: "Trace inflows, outflows, and net movement.", output: "", icon: BarChart3, path: "/cashflow-statement" },
   { title: "Financial Ratios", description: "Calculate liquidity, profitability, and solvency metrics.", output: "", icon: Calculator, path: "/financial-ratios" },
@@ -93,12 +92,12 @@ const dashboardModules: DashboardModule[] = [
 type Mode = "assistant" | "automation";
 
 const emptyStats = [
-  { title: "Total Revenue", amount: "", trend: "", isPositive: true, bgColor: "bg-emerald-100/80", iconColor: "text-emerald-600", icon: TrendingUp },
-  { title: "Total Expenses", amount: "", trend: "", isPositive: true, bgColor: "bg-rose-100/80", iconColor: "text-rose-600", icon: Receipt },
-  { title: "Net Profit", amount: "", trend: "", isPositive: true, bgColor: "bg-blue-100/80", iconColor: "text-blue-600", icon: BarChart2 },
-  { title: "Net Balance", amount: "", trend: "", isPositive: true, bgColor: "bg-purple-100/80", iconColor: "text-purple-600", icon: RefreshCw },
-  { title: "Outstanding Receivables", amount: "", trend: "", isPositive: false, bgColor: "bg-orange-100/80", iconColor: "text-orange-600", icon: FileText },
-  { title: "GST Payable", amount: "", trend: "", isPositive: true, bgColor: "bg-indigo-100/80", iconColor: "text-indigo-600", icon: Receipt },
+  { title: "Total Receivables", amount: "", trend: "", isPositive: true, iconColor: "text-[#006aff]", icon: TrendingUp },
+  { title: "Total Payables", amount: "", trend: "", isPositive: true, iconColor: "text-[#f0483e]", icon: Receipt },
+  { title: "Net Profit", amount: "", trend: "", isPositive: true, iconColor: "text-[#00b365]", icon: BarChart2 },
+  { title: "Cash at Bank", amount: "", trend: "", isPositive: true, iconColor: "text-[#8e24aa]", icon: RefreshCw },
+  { title: "Outstanding Inv", amount: "", trend: "", isPositive: false, iconColor: "text-[#f57c00]", icon: FileText },
+  { title: "GST Payable", amount: "", trend: "", isPositive: true, iconColor: "text-[#0288d1]", icon: Receipt },
 ];
 
 const isDateInPeriod = (dateInput: any, period: string): boolean => {
@@ -186,6 +185,7 @@ const Dashboard = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     { id: "1", role: "ai", content: "Hi there! I am your SHREE ANDAL AI Assistant. How can I help you automate tasks today?", timestamp: new Date() }
   ]);
+  const [chatViewMode, setChatViewMode] = useState<"chat" | "history">("chat");
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Fetching Logic
@@ -195,6 +195,25 @@ const Dashboard = () => {
       navigate("/auth");
       return;
     }
+
+    const fetchChatHistory = async () => {
+      try {
+        const res = await apiRequest(API_ENDPOINTS.AI_CHAT_HISTORY);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.history) && data.history.length > 0) {
+            setChatMessages(data.history.map((msg: any) => ({
+              id: msg.id || Math.random().toString(),
+              role: msg.role,
+              content: msg.content,
+              timestamp: new Date(msg.timestamp)
+            })));
+          }
+        }
+      } catch (err) {
+        console.error("Error loading chat history:", err);
+      }
+    };
 
     fetch(API_ENDPOINTS.USER, {
       headers: { Authorization: `Bearer ${token}` },
@@ -213,6 +232,8 @@ const Dashboard = () => {
           });
           localStorage.removeItem("token");
           navigate("/auth?tab=signup&plan=monthly");
+        } else {
+          fetchChatHistory();
         }
       })
       .catch((error) => {
@@ -242,7 +263,7 @@ const Dashboard = () => {
     return () => window.clearInterval(timer);
   }, [navigate, toast, user]);
 
-  // Load each dashboard value from the module that owns it; no display data is seeded here.
+  // Load each dashboard value from the module that owns it
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -254,7 +275,6 @@ const Dashboard = () => {
           return response?.ok ? response.json() : null;
         };
 
-        // 1. Fetch Invoices (limit 100 to get full lists for graphing/filtering)
         const invoicesRes = await apiRequest(`${API_ENDPOINTS.INVOICE}/all?limit=100`).catch(() => null);
         let invoicesData = [];
         if (invoicesRes && invoicesRes.ok) {
@@ -265,7 +285,6 @@ const Dashboard = () => {
           }
         }
 
-        // 2. Fetch Purchase Invoices
         const purchasesRes = await apiRequest(`${API_BASE_URL}/purchase-invoice/all`).catch(() => null);
         let purchasesData = [];
         if (purchasesRes && purchasesRes.ok) {
@@ -276,7 +295,6 @@ const Dashboard = () => {
           }
         }
 
-        // 3. Fetch Payrolls
         const payrollRes = await apiRequest(`${API_BASE_URL}/payroll/all`).catch(() => null);
         let payrollData = [];
         if (payrollRes && payrollRes.ok) {
@@ -287,7 +305,6 @@ const Dashboard = () => {
           }
         }
 
-        // 4. Fetch Balance Sheets
         const balanceSheetsRes = await apiRequest(`${API_BASE_URL}/balance`).catch(() => null);
         let balanceSheetsData = [];
         if (balanceSheetsRes && balanceSheetsRes.ok) {
@@ -298,14 +315,12 @@ const Dashboard = () => {
           }
         }
 
-        // 5. Fetch Financial Ratios History
         const ratiosRes = await apiRequest(`${API_BASE_URL}/financial-ratios/history`).catch(() => null);
         let ratiosHistory = null;
         if (ratiosRes && ratiosRes.ok) {
           ratiosHistory = await ratiosRes.json();
         }
 
-        // We load other counts for the records counters
         const [invoiceStats, cashflows, statements, bookkeeping, inventory, taxRecords, balanceSummary] = await Promise.all([
           readJson(`${API_ENDPOINTS.INVOICE}/stats/overview`),
           readJson(`${API_BASE_URL}/cashflow/all`),
@@ -333,15 +348,12 @@ const Dashboard = () => {
         setCashFlowStatements(lastMonthCashFlowStatements);
         setAllBookkeepingEntries(bookkeepingEntries);
         setModuleRecordCounts([
-          { label: "Invoices", count: toNumber(invoiceStats?.overall?.totalInvoices), path: "/invoice" },
-          { label: "Cash flow entries", count: cashFlowData.length, path: "/cashflow" },
-          { label: "Cash flow statements", count: cashFlowStatementData.length, path: "/cashflow-statement" },
-          { label: "Bookkeeping entries", count: bookkeepingEntries.length, path: "/bookkeeping" },
-          { label: "Inventory items", count: inventoryItems.length, path: "/inventory" },
-          { label: "Payroll records", count: payrollData.length, path: "/payroll" },
-          { label: "GST records", count: gstRecords.length, path: "/tax-gst" },
-          { label: "Balance sheets", count: toNumber(balanceSummary?.totalRecords), path: "/balance-sheet" },
-          { label: "Ratio calculations", count: Array.isArray(ratiosHistory) ? ratiosHistory.length : 0, path: "/financial-ratios" },
+          { label: "Sales Invoices", count: toNumber(invoiceStats?.overall?.totalInvoices), path: "/invoice" },
+          { label: "Purchase Bills", count: purchasesData.length, path: "/invoice" },
+          { label: "Bank Transactions", count: cashFlowData.length, path: "/cashflow" },
+          { label: "Manual Journals", count: bookkeepingEntries.length, path: "/bookkeeping" },
+          { label: "Items & Inventory", count: inventoryItems.length, path: "/inventory" },
+          { label: "Tax Returns", count: gstRecords.length, path: "/tax-gst" },
         ]);
 
       } catch (err) {
@@ -358,27 +370,24 @@ const Dashboard = () => {
     const filteredPurchases = allPurchaseInvoices.filter(inv => isDateInPeriod(inv.createdAt || inv.billDate, selectedPeriod));
     const filteredPayrolls = allPayrolls.filter(pr => isDateInPeriod(pr.createdAt, selectedPeriod));
 
-    // Group calculations
     const revenue = filteredInvoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
     const purchaseExpenses = filteredPurchases.reduce((sum, inv) => sum + (inv.total || 0), 0);
     const payrollExpenses = filteredPayrolls.reduce((sum, pr) => sum + (pr.grossSalary || 0), 0);
     const expenses = purchaseExpenses + payrollExpenses;
     const profit = revenue - expenses;
 
-    // Stats calculations
-    // Bookkeeping period-based calculations
     const selectedPeriodBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, selectedPeriod));
     const bkIncome = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
     const bkExpense = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
     const bkNet = bkIncome - bkExpense;
 
     setDashboardStats([
-      { title: "Total Revenue", amount: bkIncome > 0 ? formatCurrency(bkIncome) : "₹0", trend: "", isPositive: true, hasData: true, bgColor: "bg-emerald-100/80", iconColor: "text-emerald-600", icon: TrendingUp },
-      { title: "Total Expenses", amount: bkExpense > 0 ? formatCurrency(bkExpense) : "₹0", trend: "", isPositive: true, hasData: true, bgColor: "bg-rose-100/80", iconColor: "text-rose-600", icon: Receipt },
-      { title: "Net Profit", amount: "", trend: "", isPositive: true, hasData: false, bgColor: "bg-blue-100/80", iconColor: "text-blue-600", icon: BarChart2 },
-      { title: "Net Balance", amount: formatCurrency(bkNet), trend: "", isPositive: bkNet >= 0, hasData: true, bgColor: "bg-purple-100/80", iconColor: "text-purple-600", icon: RefreshCw },
-      { title: "Outstanding Receivables", amount: "", trend: "", isPositive: false, hasData: false, bgColor: "bg-orange-100/80", iconColor: "text-orange-600", icon: FileText },
-      { title: "GST Payable", amount: "", trend: "", isPositive: true, hasData: false, bgColor: "bg-indigo-100/80", iconColor: "text-indigo-600", icon: Receipt },
+      { title: "Total Receivables", amount: bkIncome > 0 ? formatCurrency(bkIncome) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#006aff]", icon: TrendingUp },
+      { title: "Total Payables", amount: bkExpense > 0 ? formatCurrency(bkExpense) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#f0483e]", icon: Receipt },
+      { title: "Net Profit", amount: "₹0.00", trend: "", isPositive: true, hasData: false, iconColor: "text-[#00b365]", icon: BarChart2 },
+      { title: "Cash at Bank", amount: formatCurrency(bkNet), trend: "", isPositive: bkNet >= 0, hasData: true, iconColor: "text-[#8e24aa]", icon: RefreshCw },
+      { title: "Outstanding Inv", amount: "₹0.00", trend: "", isPositive: false, hasData: false, iconColor: "text-[#f57c00]", icon: FileText },
+      { title: "GST Payable", amount: "₹0.00", trend: "", isPositive: true, hasData: false, iconColor: "text-[#0288d1]", icon: Receipt },
     ]);
 
     setPlSummaryData({
@@ -389,7 +398,6 @@ const Dashboard = () => {
       netProfitMargin: revenue > 0 ? (profit / revenue) * 100 : 0
     });
 
-    // Expenses breakdown calculations
     if (expenses > 0) {
       setExpenseBreakdown({
         goods: Math.round((purchaseExpenses / expenses) * 100),
@@ -402,31 +410,27 @@ const Dashboard = () => {
       setExpenseBreakdown({ goods: 0, salaries: 0, rent: 0, utilities: 0, others: 0 });
     }
 
-    // Invoices list mapping (Filtered for the selected period as requested)
     const selectedPeriodInvoices = allInvoices.filter(inv => isDateInPeriod(inv.invoiceDate, selectedPeriod));
     const mappedInvoices = selectedPeriodInvoices.slice(0, 5).map((inv: any) => {
-      let statusColor = "bg-slate-100 text-slate-700";
+      let statusColor = "bg-[#f4f5f8] text-[#555] border border-[#ddd]";
       const statusStr = inv.status || "draft";
-      if (statusStr === "paid") statusColor = "bg-emerald-100/80 text-emerald-700";
-      else if (statusStr === "sent" || statusStr === "viewed") statusColor = "bg-blue-100/80 text-blue-700";
-      else if (statusStr === "overdue") statusColor = "bg-rose-100/80 text-rose-700";
-      else if (statusStr === "draft") statusColor = "bg-amber-100/80 text-amber-700";
+      if (statusStr === "paid") statusColor = "bg-[#e6f8ef] text-[#00b365] border border-[#00b365]/30";
+      else if (statusStr === "sent" || statusStr === "viewed") statusColor = "bg-[#e8f2ff] text-[#006aff] border border-[#006aff]/30";
+      else if (statusStr === "overdue") statusColor = "bg-[#fde9e8] text-[#f0483e] border border-[#f0483e]/30";
+      else if (statusStr === "draft") statusColor = "bg-[#fff8e1] text-[#f57c00] border border-[#f57c00]/30";
 
       return {
         id: inv.invoiceNumber || "INV-UNKNOWN",
         company: inv.customerName || "Unknown Client",
-        amount: `₹${inv.grandTotal ? inv.grandTotal.toLocaleString() : "0"}`,
+        amount: `₹${inv.grandTotal ? inv.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "0.00"}`,
         status: statusStr.charAt(0).toUpperCase() + statusStr.slice(1),
         statusColor
       };
     });
     setInvoicesList(mappedInvoices);
 
-    // Calculate Financial Ratios Dynamically
-    // Find matching balance sheet for the selected period
     let matchingBS = allBalanceSheets.find(bs => isDateInPeriod(bs.createdAt, selectedPeriod));
     if (!matchingBS && allBalanceSheets.length > 0) {
-      // Fallback: use the latest balance sheet in the history
       matchingBS = allBalanceSheets[0];
     }
 
@@ -437,7 +441,6 @@ const Dashboard = () => {
       const bsTotalEquity = matchingBS.equity || 0;
       const bsTotalDebt = matchingBS.totalLiabilities || 0;
       
-      // Find inventory from breakdown if available
       let bsInventory = 0;
       if (matchingBS.breakdown?.assets?.currentAssets) {
         const invItem = matchingBS.breakdown.assets.currentAssets.find((item: any) => 
@@ -446,7 +449,6 @@ const Dashboard = () => {
         if (invItem) bsInventory = invItem.value || 0;
       }
 
-      // Calculate ratios
       const currentRatio = bsCurrentLiabilities ? bsCurrentAssets / bsCurrentLiabilities : 0;
       const quickRatio = bsCurrentLiabilities ? (bsCurrentAssets - bsInventory) / bsCurrentLiabilities : 0;
       const debtToEquity = bsTotalEquity ? bsTotalDebt / bsTotalEquity : 0;
@@ -475,7 +477,6 @@ const Dashboard = () => {
 
   }, [allInvoices, allPurchaseInvoices, allPayrolls, allBalanceSheets, selectedPeriod]);
 
-  // Helper to format Y-Axis labels dynamically
   const formatYAxis = (val: number) => {
     if (val >= 10000000) return `${(val / 10000000).toFixed(1)}Cr`;
     if (val >= 100000) return `${(val / 100000).toFixed(1)}L`;
@@ -483,16 +484,12 @@ const Dashboard = () => {
     return Math.round(val).toString();
   };
 
-  // Generate Chart Data for the Line Chart based on period selector
   const { revenueLinePath, revenueMax, revenueXLabels } = useMemo(() => {
     const filtered = allInvoices.filter(inv => isDateInPeriod(inv.invoiceDate, selectedPeriod));
     if (!filtered.length) return { revenueLinePath: "", revenueMax: 0, revenueXLabels: [] };
 
-    // Group invoices by date or month depending on selectedPeriod
-    // Sort chronologically
     const sorted = [...filtered].sort((a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime());
     
-    // Determine labels and points
     const pointsCount = Math.min(10, sorted.length);
     const step = Math.max(1, Math.floor(sorted.length / pointsCount));
     const selectedPoints: any[] = [];
@@ -500,7 +497,6 @@ const Dashboard = () => {
       selectedPoints.push(sorted[i]);
       if (selectedPoints.length >= 10) break;
     }
-    // ensure last is added if not already
     if (sorted.length > 1 && !selectedPoints.includes(sorted[sorted.length - 1])) {
       selectedPoints.push(sorted[sorted.length - 1]);
     }
@@ -511,11 +507,10 @@ const Dashboard = () => {
       return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
     });
 
-    // Build SVG path
     let path = "";
     selectedPoints.forEach((p, idx) => {
       const x = (idx / (selectedPoints.length - 1)) * 100;
-      const y = 100 - (((p.grandTotal || 0) / maxVal) * 80 + 10); // leave 10% padding top/bottom
+      const y = 100 - (((p.grandTotal || 0) / maxVal) * 80 + 10);
       if (idx === 0) path += `M${x},${y}`;
       else path += ` L${x},${y}`;
     });
@@ -523,12 +518,10 @@ const Dashboard = () => {
     return { revenueLinePath: path, revenueMax: maxVal, revenueXLabels: xLabels };
   }, [allInvoices, selectedPeriod]);
 
-  // Generate Cash Flow Bars data based on period selector
   const { cashFlowBars, cashFlowMax, cashFlowXLabels } = useMemo(() => {
     const filteredInvoices = allInvoices.filter(inv => isDateInPeriod(inv.invoiceDate, selectedPeriod));
     const filteredPurchases = allPurchaseInvoices.filter(inv => isDateInPeriod(inv.createdAt || inv.billDate, selectedPeriod));
     
-    // Group into 6 buckets chronologically
     const allDates = [
       ...filteredInvoices.map(i => i.invoiceDate),
       ...filteredPurchases.map(p => p.createdAt || p.billDate)
@@ -577,33 +570,32 @@ const Dashboard = () => {
     return { cashFlowBars: bars, cashFlowMax: maxVal, cashFlowXLabels: xLabels };
   }, [allInvoices, allPurchaseInvoices, selectedPeriod]);
 
-  // Auto-scroll chat to bottom when new messages arrive
-  useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
-  }, [chatMessages, isAiChatOpen]);
-
   const profileName = useMemo(() => {
     if (!user?.email) return "User";
     return user.name?.trim() || user.email.split("@")[0];
   }, [user]);
 
   const selectedPlanLabel = user?.subscriptionPlan
-    ? { trial: "Trial", monthly: "Monthly", annual: "Annual", lifetime: "Lifetime" }[user.subscriptionPlan]
+    ? { trial: "Trial", monthly: "Standard", annual: "Professional", lifetime: "Enterprise" }[user.subscriptionPlan]
     : "Pending";
 
   const profileInitial = profileName.charAt(0).toUpperCase();
-  const cashFlowChartData = useMemo(() => cashFlowEntries.slice(-6), [cashFlowEntries]);
-  const cashFlowChartMaximum = useMemo(
-    () => Math.max(1, ...cashFlowChartData.flatMap((entry) => [toNumber(entry.cashInflow), toNumber(entry.cashOutflow)])),
-    [cashFlowChartData]
-  );
+  
+  const filteredModules = useMemo(() => {
+    if (user?.role === "instore") {
+      return dashboardModules.filter(m => 
+        m.path === "/" || 
+        m.path === "/invoice" || 
+        m.path === "/inventory"
+      );
+    }
+    return dashboardModules;
+  }, [user]);
+  
   const latestCashFlowStatement = useMemo(() => {
     if (cashFlowStatements && cashFlowStatements.length > 0) {
       return cashFlowStatements[0];
     }
-    // Fallback: build dynamically from bookkeeping last month
     const lastMonthBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, "last-month"));
     const bkIncome = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
     const bkExpense = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
@@ -619,20 +611,32 @@ const Dashboard = () => {
 
   const handleSignOut = () => {
     localStorage.removeItem("token");
-    toast({
-      title: "Signed out",
-      description: "You have been successfully signed out.",
-    });
     navigate("/auth");
   };
 
   const handleMainSearchSubmit = () => {
     if (!inputValue.trim()) return;
     toast({
-      title: mode === "assistant" ? "AI Assistant ready" : "Automation ready",
+      title: mode === "assistant" ? "AI Search" : "Automation Executed",
       description: inputValue.trim(),
     });
     setInputValue("");
+  };
+
+  const handleClearChat = async () => {
+    try {
+      const res = await apiRequest(API_ENDPOINTS.AI_CHAT_HISTORY, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        setChatMessages([
+          { id: "1", role: "ai", content: "Hi there! I am your SHREE ANDAL AI Assistant. How can I help you automate tasks today?", timestamp: new Date() }
+        ]);
+        toast({ title: "Chat cleared", description: "History removed from database." });
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleChatSubmit = async (e?: React.FormEvent) => {
@@ -640,97 +644,73 @@ const Dashboard = () => {
     if (!chatInput.trim()) return;
 
     const userText = chatInput.trim();
-    
-    // Add User Message
-    const newUserMsg: ChatMessage = {
-      id: Date.now().toString(),
-      role: "user",
-      content: userText,
-      timestamp: new Date()
-    };
-    
-    // Add a placeholder message for AI
+    const newUserMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: userText, timestamp: new Date() };
     const aiPlaceholderId = (Date.now() + 1).toString();
-    const newAiMsgPlaceholder: ChatMessage = {
-      id: aiPlaceholderId,
-      role: "ai",
-      content: "Thinking...",
-      timestamp: new Date()
-    };
+    const newAiMsgPlaceholder: ChatMessage = { id: aiPlaceholderId, role: "ai", content: "Thinking...", timestamp: new Date() };
 
     setChatMessages((prev) => [...prev, newUserMsg, newAiMsgPlaceholder]);
     setChatInput("");
+
+    try { await apiRequest(API_ENDPOINTS.AI_CHAT_MESSAGE, { method: "POST", body: JSON.stringify({ role: "user", content: userText }) }); } catch (dbErr) { }
 
     try {
       const currentHistory = [...chatMessages, newUserMsg];
       const replyText = await callGemini(currentHistory);
 
+      try { await apiRequest(API_ENDPOINTS.AI_CHAT_MESSAGE, { method: "POST", body: JSON.stringify({ role: "ai", content: replyText }) }); } catch (dbErr) { }
+
       setChatMessages((prev) => 
-        prev.map(msg => 
-          msg.id === aiPlaceholderId 
-            ? { ...msg, content: replyText, timestamp: new Date() } 
-            : msg
-        )
+        prev.map(msg => msg.id === aiPlaceholderId ? { ...msg, content: replyText, timestamp: new Date() } : msg)
       );
     } catch (error: any) {
-      console.error("Gemini Error:", error);
       setChatMessages((prev) => 
-        prev.map(msg => 
-          msg.id === aiPlaceholderId 
-            ? { ...msg, content: "Error: Failed to get response from AI. Please try again.", timestamp: new Date() } 
-            : msg
-        )
+        prev.map(msg => msg.id === aiPlaceholderId ? { ...msg, content: "Error communicating with AI.", timestamp: new Date() } : msg)
       );
     }
   };
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] font-sans text-slate-800 overflow-hidden selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="flex h-screen bg-[#f4f5f8] font-sans text-[#333] overflow-hidden selection:bg-[#006aff]/20 selection:text-[#006aff]">
       
       {/* Mobile Sidebar Overlay */}
       {mobileSidebarOpen && (
         <div
           role="presentation"
-          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden transition-opacity"
+          className="fixed inset-0 z-40 bg-[#111]/40 backdrop-blur-sm lg:hidden transition-opacity"
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar - Responsive Drawer */}
+      {/* Sidebar - Deep Navy Classic ERP Style */}
       <aside 
-        className={`fixed inset-y-0 left-0 z-[45] bg-white border-r border-slate-200/60 flex flex-col transition-all duration-300 ease-in-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[45] bg-[#1c2434] border-r border-[#111827] flex flex-col transition-all duration-300 ease-in-out lg:static lg:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
-        } ${sidebarOpen ? 'w-[280px]' : 'w-20'}`}
+        } ${sidebarOpen ? 'w-[260px]' : 'w-20'}`}
       >
-        {/* Sidebar Header with Interactive 'S' Logo */}
-        <div className="h-16 flex items-center px-5 border-b border-slate-200/60 shrink-0">
+        {/* Sidebar Header */}
+        <div className="h-[60px] flex items-center px-4 border-b border-[#2d3748] shrink-0">
           <button 
             onClick={() => {
-              if (window.innerWidth >= 1024) {
-                setSidebarOpen(!sidebarOpen);
-              } else {
-                setMobileSidebarOpen(false);
-              }
+              if (window.innerWidth >= 1024) setSidebarOpen(!sidebarOpen);
+              else setMobileSidebarOpen(false);
             }}
-            className="group w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold text-xl mr-3 shrink-0 shadow-sm transition-colors hover:bg-slate-800 focus:outline-none"
-            title="Toggle Sidebar"
+            className="w-8 h-8 bg-[#006aff] rounded flex items-center justify-center text-white font-bold text-[16px] mr-3 shrink-0 shadow-sm focus:outline-none"
           >
-            <span className="group-hover:hidden">S</span>
-            <Menu className="hidden group-hover:block w-5 h-5 text-white" />
+            S
           </button>
           
           {sidebarOpen && (
             <div className="flex flex-col justify-center overflow-hidden whitespace-nowrap min-w-0">
-              <span className="font-bold text-lg tracking-tight text-slate-900 leading-none mb-1 truncate">SHREE ANDAL AI</span>
-              <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold leading-none truncate">Software Solutions</span>
+              <span className="font-bold text-[15px] tracking-tight text-white leading-none mb-1 truncate">SHREE ANDAL AI</span>
+              <span className="text-[10px] text-[#8a99a8] uppercase tracking-wider font-semibold leading-none truncate">Books & Accounting</span>
             </div>
           )}
         </div>
 
         {/* Sidebar Navigation */}
-        <ScrollArea className="flex-1 py-4">
-          <nav className="space-y-1.5 px-3">
-            {dashboardModules.map((module) => {
+        <ScrollArea className="flex-1 py-3">
+          <nav className="space-y-0.5 px-3">
+            {filteredModules.map((module) => {
               const Icon = module.icon;
               const isActive = activePath === module.path;
               return (
@@ -742,17 +722,17 @@ const Dashboard = () => {
                     if(window.innerWidth < 1024) setMobileSidebarOpen(false);
                   }}
                   title={!sidebarOpen ? module.title : undefined}
-                  className={`w-full flex items-center px-3 py-2.5 rounded-xl transition-all duration-200 group ${
+                  className={`w-full flex items-center px-3 py-2 rounded-[4px] transition-colors group ${
                     isActive 
-                      ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10' 
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      ? 'bg-[#006aff] text-white' 
+                      : 'text-[#8a99a8] hover:bg-[#2a3143] hover:text-white'
                   }`}
                 >
-                  <Icon className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-900'}`} />
+                  <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-white' : 'text-[#8a99a8] group-hover:text-white'}`} />
                   {sidebarOpen && (
                     <>
-                      <span className="ml-3.5 text-[14px] font-medium truncate">{module.title}</span>
-                      {!isActive && <ChevronDown className="w-4 h-4 ml-auto text-slate-400 opacity-0 group-hover:opacity-100 -rotate-90 transition-all shrink-0" />}
+                      <span className="ml-3 text-[13px] font-medium truncate">{module.title}</span>
+                      {!isActive && <ChevronDown className="w-[14px] h-[14px] ml-auto opacity-0 group-hover:opacity-100 -rotate-90 transition-all shrink-0" />}
                     </>
                   )}
                 </button>
@@ -766,70 +746,66 @@ const Dashboard = () => {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         
         {/* Top Header */}
-        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 sticky top-0">
+        <header className="h-[60px] bg-white border-b border-[#e4e5e7] flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 sticky top-0">
           
           <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-            {/* Mobile Menu Button - Only visible on small screens */}
-            <button onClick={() => {
-               setMobileSidebarOpen(true); 
-            }} className="p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-xl lg:hidden flex-shrink-0 transition-colors">
+            <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 -ml-1.5 text-[#555] hover:bg-[#f4f5f8] rounded lg:hidden flex-shrink-0">
               <Menu className="w-5 h-5" />
             </button>
             
-            <div className="relative w-full max-w-xl flex items-center gap-2 ml-1 sm:ml-0">
-              <div className="relative flex-1 min-w-0">
-                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input 
-                  id="main-search-input"
-                  type="text" 
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleMainSearchSubmit();
-                    }
-                  }}
-                  placeholder={mode === "assistant" ? "Ask AI anything..." : "Describe automation..."}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-100/80 border border-transparent rounded-xl text-[13px] font-medium focus:outline-none focus:bg-white focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-slate-400 truncate"
-                />
-              </div>
-              <button 
-                onClick={handleMainSearchSubmit}
-                className="hidden sm:flex w-9 h-9 rounded-xl bg-slate-900 text-white items-center justify-center hover:bg-slate-800 transition-colors shrink-0 shadow-sm"
-              >
-                <ArrowRight className="w-4 h-4" />
-              </button>
+            <div className="relative w-full max-w-[400px] flex items-center">
+              <Search className="w-[15px] h-[15px] absolute left-3 text-[#999]" />
+              <input 
+                id="main-search-input"
+                type="text" 
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleMainSearchSubmit(); } }}
+                placeholder="Search in your organization..."
+                className="w-full pl-9 pr-4 py-1.5 bg-[#f4f5f8] border border-transparent rounded-[4px] text-[13px] text-[#333] focus:outline-none focus:bg-white focus:border-[#006aff] transition-all placeholder:text-[#999] h-8"
+              />
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4 ml-4 shrink-0">
-            <button className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors shrink-0">
+          <div className="flex items-center gap-3 ml-4 shrink-0">
+            <button className="relative p-1.5 text-[#555] hover:text-[#222] hover:bg-[#f4f5f8] rounded transition-colors">
               <Bell className="w-[18px] h-[18px]" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
+              <span className="absolute top-1 right-1 w-[7px] h-[7px] bg-[#f0483e] rounded-full border-2 border-white"></span>
             </button>
             
-            <div className="flex items-center gap-3 pl-3 sm:pl-4 border-l border-slate-200/60 cursor-pointer group relative shrink-0">
-               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm shrink-0">
+            <div className="flex items-center gap-2.5 pl-3 border-l border-[#e4e5e7] cursor-pointer group relative shrink-0">
+               <div className="w-7 h-7 rounded-full bg-[#f2f8ff] border border-[#cce3ff] flex items-center justify-center text-[#006aff] font-bold text-[12px] shrink-0">
                   {loading ? "-" : profileInitial}
                </div>
-               <div className="hidden md:block text-left min-w-0">
-                  <p className="text-[13px] font-bold text-slate-900 leading-none truncate max-w-[120px]">{loading ? "Loading..." : profileName}</p>
-                  <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-500 mt-1 truncate">{selectedPlanLabel}</p>
+               <div className="hidden md:flex flex-col min-w-0">
+                  <span className="text-[13px] font-semibold text-[#222] leading-none truncate max-w-[120px]">{loading ? "Loading..." : profileName}</span>
                </div>
-               <ChevronDown className="hidden md:block w-4 h-4 text-slate-400 shrink-0" />
+               <ChevronDown className="hidden md:block w-4 h-4 text-[#999] shrink-0" />
                
-               <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 origin-top-right transform scale-95 group-hover:scale-100">
-                  <div className="p-4 border-b border-slate-100 md:hidden bg-slate-50/50 rounded-t-2xl">
-                     <p className="text-sm font-bold text-slate-900 truncate">{profileName}</p>
-                     <p className="text-xs text-slate-500 mt-0.5 truncate">{user?.email}</p>
+               {/* Dropdown Menu */}
+               <div className="absolute right-0 top-[120%] w-[250px] bg-white rounded-md shadow-[0_4px_15px_rgba(0,0,0,0.1)] border border-[#e4e5e7] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform origin-top-right">
+                  <div className="p-3 border-b border-[#eee]">
+                     <p className="text-[13px] font-bold text-[#222] truncate">{profileName}</p>
+                     <p className="text-[11px] text-[#777] mt-0.5 truncate">{user?.email}</p>
+                     <div className="flex flex-wrap gap-1.5 mt-2">
+                       <div className="inline-block px-2 py-0.5 bg-[#e8f2ff] text-[#006aff] text-[10px] font-bold uppercase rounded-sm border border-[#cce3ff]">
+                         {selectedPlanLabel} Plan
+                       </div>
+                       <div className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded-sm border ${
+                         user?.role === "instore" 
+                           ? "bg-[#fff8e1] text-[#f57c00] border-[#f57c00]/30" 
+                           : "bg-[#e6f8ef] text-[#00b365] border-[#00b365]/30"
+                       }`}>
+                         {user?.role === "instore" ? "In-Store POS" : "Admin Portal"}
+                       </div>
+                     </div>
                   </div>
-                  <div className="p-1.5">
-                    <button onClick={() => navigate("/profile")} className="w-full text-left px-3 py-2.5 text-[13px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl flex items-center gap-2.5 transition-colors">
-                      <Settings className="w-4 h-4 shrink-0" /> Profile Settings
+                  <div className="py-1">
+                    <button onClick={() => navigate("/profile")} className="w-full text-left px-4 py-2 text-[13px] text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff] flex items-center gap-2 transition-colors">
+                      <Settings className="w-[14px] h-[14px]" /> Account Settings
                     </button>
-                    <button onClick={handleSignOut} className="w-full text-left px-3 py-2.5 text-[13px] font-medium text-rose-600 hover:bg-rose-50 rounded-xl flex items-center gap-2.5 transition-colors mt-1">
-                      <LogOut className="w-4 h-4 shrink-0" /> Sign Out
+                    <button onClick={handleSignOut} className="w-full text-left px-4 py-2 text-[13px] text-[#f0483e] hover:bg-[#fde9e8] flex items-center gap-2 transition-colors">
+                      <LogOut className="w-[14px] h-[14px]" /> Sign Out
                     </button>
                   </div>
                </div>
@@ -839,20 +815,20 @@ const Dashboard = () => {
 
         {/* Scrollable Dashboard Analytics Area */}
         <ScrollArea className="flex-1">
-          <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto w-full">
+          <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
             
-            {/* Page Title & Single Period selector */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <div className="min-w-0">
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight truncate">Dashboard Overview</h1>
-                <p className="text-[13px] text-slate-500 mt-1.5 font-medium truncate">Monitor your business metrics and financial health.</p>
+            {/* Page Title & Period Selector */}
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+              <div>
+                <h1 className="text-[22px] font-bold text-[#111] tracking-tight truncate">Dashboard</h1>
+                <p className="text-[13px] text-[#666] mt-0.5 truncate">Overview of your business financials.</p>
               </div>
-              <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0">
-                <span className="text-[13px] font-bold text-slate-500 whitespace-nowrap">Filter Period:</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[12px] font-semibold text-[#555] uppercase tracking-wide">Period:</span>
                 <select
                   value={selectedPeriod}
                   onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="w-full sm:w-[160px] text-[13px] font-bold uppercase tracking-wide flex items-center gap-1.5 px-4 py-2.5 border border-slate-200 rounded-xl text-slate-650 bg-white hover:bg-slate-50 transition-colors shrink-0 outline-none cursor-pointer shadow-sm"
+                  className="w-full sm:w-[150px] text-[13px] font-semibold px-3 py-1.5 border border-[#ccc] rounded-sm text-[#222] bg-white hover:border-[#aaa] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] transition-all outline-none cursor-pointer h-8"
                 >
                   <option value="this-month">This Month</option>
                   <option value="last-month">Last Month</option>
@@ -863,79 +839,60 @@ const Dashboard = () => {
             </div>
 
             {/* --- Stats Grid --- */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 sm:gap-5 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
               {dashboardStats.map((stat, i) => (
-                <div key={i} className="bg-white p-4 xl:p-3 2xl:p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:-translate-y-1 hover:shadow-md transition-all duration-300 flex flex-col justify-between group min-w-0">
-                  <div className="flex items-center justify-between mb-3 xl:mb-2 2xl:mb-4">
-                    <div className={`w-10 h-10 xl:w-9 xl:h-9 2xl:w-11 2xl:h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300 ${stat.bgColor} shrink-0`}>
-                      <stat.icon className={`w-[18px] h-[18px] 2xl:w-[20px] 2xl:h-[20px] ${stat.iconColor}`} />
-                    </div>
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <h3 className="text-[11px] xl:text-[10px] 2xl:text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1 line-clamp-2 min-h-[32px] xl:min-h-[28px] 2xl:min-h-[36px] flex items-center">
+                <div key={i} className="bg-white p-4 rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col justify-between group">
+                  <div className="flex items-center gap-2.5 mb-3">
+                    <stat.icon className={`w-[18px] h-[18px] ${stat.iconColor}`} />
+                    <h3 className="text-[12px] font-semibold text-[#555] uppercase tracking-wide truncate">
                       {stat.title}
                     </h3>
-                    <h2 className="text-xl xl:text-lg 2xl:text-[22px] font-black text-slate-900 tracking-tight mb-2 tabular-nums truncate">
-                      {stat.hasData ? stat.amount : " "}
-                    </h2>
-                    {stat.hasData && <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] xl:text-[10px] 2xl:text-[12px] font-semibold mt-auto">
-                      {stat.trend ? (stat.isPositive ? (
-                        <span className="flex items-center gap-0.5 text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md shrink-0 whitespace-nowrap">
-                          <ArrowUpRight className="w-3 h-3 shrink-0" /> {stat.trend}
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-0.5 text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded-md shrink-0 whitespace-nowrap">
-                          <ArrowDownRight className="w-3 h-3 shrink-0" /> {stat.trend}
-                        </span>
-                      )) : null}
-                      <span className="text-slate-400 font-medium whitespace-nowrap">{stat.trend ? "vs last month" : "last month's bookkeeping"}</span>
-                    </div>}
                   </div>
+                  <h2 className="text-[20px] font-bold text-[#111] tabular-nums truncate">
+                    {stat.amount || "₹0.00"}
+                  </h2>
                 </div>
               ))}
             </div>
 
             {/* --- Charts Row 1 --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 mb-6">
               
-              {/* Revenue Line Chart - FIXED ALIGNMENT */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col min-w-0">
-                <div className="flex justify-between items-center mb-6 gap-2">
-                  <h3 className="text-[15px] font-bold text-slate-900 truncate">Revenue Overview</h3>
+              {/* Revenue Line Chart */}
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
+                <div className="px-5 py-3.5 border-b border-[#e4e5e7] flex justify-between items-center">
+                  <h3 className="text-[14px] font-semibold text-[#222]">Income and Expense</h3>
+                  <button className="text-[12px] text-[#006aff] font-medium hover:underline">View Report</button>
                 </div>
-                <div className="flex-1 w-full flex flex-col justify-center">
+                <div className="p-5 flex-1 w-full flex flex-col justify-center">
                   {!revenueLinePath ? (
-                    <div className="flex-1 flex items-center justify-center text-slate-400 text-xs font-semibold py-12">
-                      No revenue data for this period
+                    <div className="flex-1 flex items-center justify-center text-[#999] text-[13px] font-medium py-12">
+                      No data available for this period
                     </div>
                   ) : (
                     <>
-                      {/* Chart Body */}
                       <div className="relative flex-1 flex min-h-[160px]">
-                        {/* Y-Axis: Dynamic Width */}
-                        <div className="flex flex-col justify-between text-[11px] text-slate-400 font-medium py-1 w-8 shrink-0">
+                        <div className="flex flex-col justify-between text-[11px] text-[#777] font-medium py-1 w-9 shrink-0">
                           <span>{formatYAxis(revenueMax)}</span>
                           <span>{formatYAxis(revenueMax * 0.75)}</span>
                           <span>{formatYAxis(revenueMax * 0.5)}</span>
                           <span>{formatYAxis(revenueMax * 0.25)}</span>
                           <span>0</span>
                         </div>
-                        {/* Grid Lines & SVG */}
-                        <div className="flex-1 relative border-b border-slate-200">
+                        <div className="flex-1 relative border-b border-[#eee]">
                           <div className="absolute inset-0 flex flex-col justify-between py-1">
-                            <div className="h-px w-full bg-slate-100"></div>
-                            <div className="h-px w-full bg-slate-100"></div>
-                            <div className="h-px w-full bg-slate-100"></div>
-                            <div className="h-px w-full bg-slate-100"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
                             <div className="h-px w-full bg-transparent"></div>
                           </div>
                           <svg className="absolute inset-0 w-full h-full pb-1" preserveAspectRatio="none" viewBox="0 0 100 100">
-                            <path d={revenueLinePath} fill="none" stroke="#4F46E5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d={revenueLinePath} fill="none" stroke="#006aff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         </div>
                       </div>
-                      {/* X-Axis */}
-                      <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider pl-8 pt-3">
+                      <div className="flex justify-between text-[10px] text-[#777] font-semibold uppercase tracking-wider pl-9 pt-3">
                         {revenueXLabels.map((lbl, idx) => (
                           <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
                         ))}
@@ -946,56 +903,51 @@ const Dashboard = () => {
               </div>
 
               {/* Cash Flow Overview */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col min-w-0">
-                <div className="flex justify-between items-center mb-6 gap-2">
-                  <h3 className="text-[15px] font-bold text-slate-900 truncate">Cash Flow Overview</h3>
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
+                <div className="px-5 py-3.5 border-b border-[#e4e5e7]">
+                  <h3 className="text-[14px] font-semibold text-[#222]">Cash Flow</h3>
                 </div>
-                <div className="flex-1 w-full flex flex-col justify-center">
+                <div className="p-5 flex-1 w-full flex flex-col justify-center">
                   {!cashFlowBars ? (
-                    <div className="flex-1 flex items-center justify-center text-slate-400 text-xs font-semibold py-12">
-                      No cash flow data for this period
+                    <div className="flex-1 flex items-center justify-center text-[#999] text-[13px] font-medium py-12">
+                      No cash flow data
                     </div>
                   ) : (
                     <>
-                      {/* Chart Body */}
                       <div className="relative flex-1 flex min-h-[160px]">
-                        {/* Y-Axis */}
-                        <div className="flex flex-col justify-between text-[11px] text-slate-400 font-medium py-1 w-8 shrink-0">
+                        <div className="flex flex-col justify-between text-[11px] text-[#777] font-medium py-1 w-9 shrink-0">
                           <span>{formatYAxis(cashFlowMax)}</span>
                           <span>{formatYAxis(cashFlowMax * 0.75)}</span>
                           <span>{formatYAxis(cashFlowMax * 0.5)}</span>
                           <span>{formatYAxis(cashFlowMax * 0.25)}</span>
                           <span>0</span>
                         </div>
-                        {/* Bars & Grid Lines */}
-                        <div className="flex-1 relative border-b border-slate-200">
+                        <div className="flex-1 relative border-b border-[#eee]">
                           <div className="absolute inset-0 flex flex-col justify-between py-1">
-                            <div className="h-px w-full bg-slate-100"></div>
-                            <div className="h-px w-full bg-slate-100"></div>
-                            <div className="h-px w-full bg-slate-100"></div>
-                            <div className="h-px w-full bg-slate-100"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
                             <div className="h-px w-full bg-transparent"></div>
                           </div>
-                          <div className="absolute inset-0 flex items-end justify-between px-2 pt-1">
+                          <div className="absolute inset-0 flex items-end justify-between px-3 pt-1">
                             {cashFlowBars.map((bar, i) => (
-                              <div key={i} className="flex gap-1 w-[6%] h-full items-end pb-[1px] relative z-10">
-                                <div className="bg-emerald-400 w-full rounded-t-[3px] transition-all hover:opacity-80" style={{ height: bar.inflowHeight }} title={`Inflow: ₹${bar.inflowVal}`}></div>
-                                <div className="bg-indigo-400 w-full rounded-t-[3px] transition-all hover:opacity-80" style={{ height: bar.outflowHeight }} title={`Outflow: ₹${bar.outflowVal}`}></div>
+                              <div key={i} className="flex gap-1 w-[8%] h-full items-end pb-[1px] relative z-10">
+                                <div className="bg-[#00b365] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.inflowHeight }} title={`Inflow: ₹${bar.inflowVal}`}></div>
+                                <div className="bg-[#f0483e] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.outflowHeight }} title={`Outflow: ₹${bar.outflowVal}`}></div>
                               </div>
                             ))}
                           </div>
                         </div>
                       </div>
-                      {/* X-Axis */}
-                      <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider pl-8 pt-3 mb-4">
+                      <div className="flex justify-between text-[10px] text-[#777] font-semibold uppercase tracking-wider pl-9 pt-3 mb-4">
                         {cashFlowXLabels.map((lbl, idx) => (
                           <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
                         ))}
                       </div>
-                      {/* Legend */}
-                      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-auto">
-                        <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-2.5 h-2.5 rounded bg-emerald-400 shrink-0"></span> Cash Inflow</div>
-                        <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-2.5 h-2.5 rounded bg-indigo-400 shrink-0"></span> Cash Outflow</div>
+                      <div className="flex justify-center gap-5 text-[11px] text-[#555] font-semibold">
+                        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#00b365]"></span> Cash Inflow</div>
+                        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#f0483e]"></span> Cash Outflow</div>
                       </div>
                     </>
                   )}
@@ -1003,41 +955,33 @@ const Dashboard = () => {
               </div>
 
               {/* Profit & Loss Summary */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col lg:col-span-2 xl:col-span-1 min-w-0">
-                <div className="flex justify-between items-center mb-4 gap-2">
-                  <h3 className="text-[15px] font-bold text-slate-900 truncate">Profit &amp; Loss Summary</h3>
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col lg:col-span-2 xl:col-span-1 min-w-0">
+                <div className="px-5 py-3.5 border-b border-[#e4e5e7]">
+                  <h3 className="text-[14px] font-semibold text-[#222]">Profit and Loss</h3>
                 </div>
-                <div className="flex-1 flex flex-col justify-center gap-1">
-                  <div className="flex justify-between items-center py-2.5 border-b border-slate-100 gap-3">
-                    <span className="text-[13px] text-slate-500 font-semibold truncate">Total Revenue</span>
-                    <span className="text-[14px] font-bold text-slate-900 tabular-nums shrink-0">
-                      {plSummaryData.totalRevenue > 0 ? `₹${plSummaryData.totalRevenue.toLocaleString()}` : ""}
+                <div className="p-5 flex-1 flex flex-col justify-center">
+                  <div className="flex justify-between items-center py-2.5 border-b border-[#f4f5f8]">
+                    <span className="text-[13px] text-[#555]">Total Income</span>
+                    <span className="text-[14px] font-semibold text-[#222] tabular-nums">
+                      {plSummaryData.totalRevenue > 0 ? `₹${plSummaryData.totalRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5 border-b border-slate-100 gap-3">
-                    <span className="text-[13px] text-slate-500 font-semibold truncate">Total Expenses</span>
-                    <span className="text-[14px] font-bold text-slate-900 tabular-nums shrink-0">
-                      {plSummaryData.totalExpenses > 0 ? `₹${plSummaryData.totalExpenses.toLocaleString()}` : ""}
+                  <div className="flex justify-between items-center py-2.5 border-b border-[#f4f5f8]">
+                    <span className="text-[13px] text-[#555]">Total Expenses</span>
+                    <span className="text-[14px] font-semibold text-[#222] tabular-nums">
+                      {plSummaryData.totalExpenses > 0 ? `₹${plSummaryData.totalExpenses.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-4 border-b border-slate-200 bg-emerald-50/60 -mx-5 px-5 sm:-mx-6 sm:px-6 my-1 gap-3">
-                    <span className="text-[14px] font-bold text-slate-900 truncate">Net Profit</span>
-                    <span className={`text-xl font-black tabular-nums shrink-0 ${plSummaryData.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                      {plSummaryData.totalRevenue > 0 || plSummaryData.totalExpenses > 0 ? (
-                        `${plSummaryData.netProfit < 0 ? "-" : ""}₹${Math.abs(plSummaryData.netProfit).toLocaleString()}`
-                      ) : ""}
+                  <div className="flex justify-between items-center py-4 my-2">
+                    <span className="text-[14px] font-bold text-[#222]">Net Profit</span>
+                    <span className={`text-[18px] font-bold tabular-nums ${plSummaryData.netProfit >= 0 ? "text-[#00b365]" : "text-[#f0483e]"}`}>
+                      {plSummaryData.netProfit < 0 ? "-" : ""}₹{Math.abs(plSummaryData.netProfit).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5 border-b border-slate-100 gap-3">
-                    <span className="text-[13px] text-slate-500 font-semibold truncate">Gross Profit Margin</span>
-                    <span className="text-[14px] font-bold text-slate-900 tabular-nums shrink-0">
-                      {plSummaryData.totalRevenue > 0 ? `${plSummaryData.grossProfitMargin.toFixed(2)}%` : ""}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2.5 gap-3">
-                    <span className="text-[13px] text-slate-500 font-semibold truncate">Net Profit Margin</span>
-                    <span className="text-[14px] font-bold text-slate-900 tabular-nums shrink-0">
-                      {plSummaryData.totalRevenue > 0 ? `${plSummaryData.netProfitMargin.toFixed(2)}%` : ""}
+                  <div className="flex justify-between items-center py-2.5 border-t border-[#f4f5f8]">
+                    <span className="text-[13px] text-[#555]">Gross Margin</span>
+                    <span className="text-[13px] font-semibold text-[#222] tabular-nums">
+                      {plSummaryData.totalRevenue > 0 ? `${plSummaryData.grossProfitMargin.toFixed(2)}%` : "0.00%"}
                     </span>
                   </div>
                 </div>
@@ -1045,42 +989,44 @@ const Dashboard = () => {
             </div>
 
             {/* --- Charts Row 2 --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
               
               {/* Recent Invoices Table */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col overflow-hidden lg:col-span-2 xl:col-span-2 min-w-0">
-                <div className="flex justify-between items-center mb-5 gap-2">
-                  <h3 className="text-[15px] font-bold text-slate-900 truncate">Recent Invoices</h3>
-                  <button className="text-[13px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors shrink-0 whitespace-nowrap">View All</button>
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col overflow-hidden lg:col-span-2 xl:col-span-3 min-w-0">
+                <div className="px-5 py-3.5 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
+                  <h3 className="text-[14px] font-semibold text-[#222]">Recent Invoices</h3>
+                  <button className="w-[24px] h-[24px] bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors"><Plus className="w-4 h-4" /></button>
                 </div>
-                <div className="flex-1 overflow-x-auto -mx-1 px-1 [&::-webkit-scrollbar]:hidden">
-                  <table className="w-full text-[13px] text-left border-collapse min-w-[450px]">
+                <div className="flex-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+                  <table className="w-full text-left border-collapse min-w-[450px]">
                     <thead>
-                      <tr className="border-b border-slate-200 text-slate-400">
-                        <th className="pb-3 pr-3 font-bold uppercase tracking-wider text-[10px] whitespace-nowrap">Invoice ID</th>
-                        <th className="pb-3 pr-3 font-bold uppercase tracking-wider text-[10px] whitespace-nowrap">Client</th>
-                        <th className="pb-3 pr-4 font-bold uppercase tracking-wider text-[10px] text-right whitespace-nowrap">Amount</th>
-                        <th className="pb-3 font-bold uppercase tracking-wider text-[10px] text-right whitespace-nowrap">Status</th>
+                      <tr className="border-b border-[#e4e5e7] bg-white">
+                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide whitespace-nowrap w-32">Date</th>
+                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide whitespace-nowrap">Invoice#</th>
+                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide whitespace-nowrap">Customer Name</th>
+                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide text-right whitespace-nowrap">Status</th>
+                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide text-right whitespace-nowrap">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {invoicesList.length > 0 ? (
                         invoicesList.map((inv, i) => (
-                          <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/80 transition-colors group">
-                            <td className="py-3.5 font-bold text-slate-800 pr-3 whitespace-nowrap">{inv.id}</td>
-                            <td className="py-3.5 font-medium text-slate-500 pr-3 truncate max-w-[150px]">{inv.company}</td>
-                            <td className="py-3.5 font-bold text-slate-900 text-right pr-4 tabular-nums whitespace-nowrap">{inv.amount}</td>
-                            <td className="py-3.5 text-right whitespace-nowrap">
-                              <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-widest uppercase inline-block ${inv.statusColor}`}>
+                          <tr key={i} className="border-b border-[#f4f5f8] last:border-0 hover:bg-[#f9fafd] transition-colors cursor-pointer">
+                            <td className="py-3 px-5 text-[13px] text-[#555] whitespace-nowrap">12 Aug 2026</td>
+                            <td className="py-3 px-5 text-[13px] text-[#006aff] font-medium whitespace-nowrap">{inv.id}</td>
+                            <td className="py-3 px-5 text-[13px] text-[#333] font-medium truncate max-w-[180px]">{inv.company}</td>
+                            <td className="py-3 px-5 text-right whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-wider ${inv.statusColor}`}>
                                 {inv.status}
                               </span>
                             </td>
+                            <td className="py-3 px-5 text-[13px] font-semibold text-[#222] text-right tabular-nums whitespace-nowrap">{inv.amount}</td>
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={4} className="py-8 text-center text-slate-400 font-medium">
-                            No recent invoices found. Go to Invoice Automation to create one.
+                          <td colSpan={5} className="py-8 text-center text-[#999] text-[13px]">
+                            No recent invoices found.
                           </td>
                         </tr>
                       )}
@@ -1089,75 +1035,57 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              {/* Top Expenses Donut Chart */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col justify-center min-w-0">
-                <div className="flex justify-between items-center mb-5">
-                  <h3 className="text-[15px] font-bold text-slate-900 truncate">Top Expenses</h3>
-                </div>
-                <div className="flex-1" />
+              {/* Module records */}
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm lg:col-span-1 flex flex-col min-w-0">
+                 <div className="px-5 py-3.5 border-b border-[#e4e5e7] bg-[#f9fafd]">
+                    <h3 className="text-[14px] font-semibold text-[#222]">Records Summary</h3>
+                 </div>
+                 <div className="flex-1 overflow-y-auto divide-y divide-[#f4f5f8]">
+                    {moduleRecordCounts.map((module) => (
+                      <div key={module.label} className="flex w-full items-center justify-between px-5 py-3 text-left hover:bg-[#f9fafd] transition-colors cursor-pointer">
+                        <p className="truncate text-[13px] font-medium text-[#444]">{module.label}</p>
+                        <span className="text-[13px] font-semibold text-[#222] tabular-nums">{module.count}</span>
+                      </div>
+                    ))}
+                 </div>
               </div>
 
-              {/* Latest cash-flow statement */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col min-w-0">
-                <h3 className="mb-6 text-[15px] font-bold text-slate-900 truncate">Latest Cash Flow Statement (Last Month)</h3>
-                {latestCashFlowStatement ? (
-                  <div className="flex flex-1 flex-col justify-center gap-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{formatPeriod(latestCashFlowStatement.period)}</p>
-                    <div className="flex items-center justify-between gap-3"><span className="text-[13px] font-semibold text-slate-500">Cash inflow</span><span className="font-bold tabular-nums text-emerald-600">{formatCurrency(latestCashFlowStatement.totalInflow)}</span></div>
-                    <div className="flex items-center justify-between gap-3"><span className="text-[13px] font-semibold text-slate-500">Cash outflow</span><span className="font-bold tabular-nums text-rose-600">{formatCurrency(latestCashFlowStatement.totalOutflow)}</span></div>
-                    <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-4"><span className="text-[13px] font-bold text-slate-900">Net cash flow</span><span className={`font-black tabular-nums ${toNumber(latestCashFlowStatement.netCashFlow) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{formatCurrency(latestCashFlowStatement.netCashFlow)}</span></div>
-                  </div>
-                ) : <div className="flex-1" />}
-              </div>
             </div>
 
-            {/* --- Bottom Row --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-8">
-              
-              {/* Financial Ratios */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm lg:col-span-3 min-w-0">
-                 <h3 className="text-[15px] font-bold text-slate-900 mb-5 truncate">Financial Ratios</h3>
-                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 sm:gap-4">
-                    {financialRatios.length > 0 ? (
-                      financialRatios.map((ratio, idx) => (
-                        <div key={idx} className="flex flex-col items-center justify-center p-4 border border-slate-100 bg-slate-50/50 rounded-xl text-center hover:border-indigo-200 hover:bg-indigo-50/50 transition-all cursor-pointer group min-w-0">
-                          <span className="text-[12px] font-semibold text-slate-500 mb-2 truncate w-full">{ratio.label}</span>
-                          <span className="text-xl font-black text-slate-900 mb-2 group-hover:text-indigo-600 transition-colors tabular-nums truncate w-full">{ratio.value}</span>
-                          <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-md shrink-0 whitespace-nowrap ${
-                            ratio.status === "Good" ? "text-emerald-700 bg-emerald-100/60" : "text-rose-700 bg-rose-100/60"
-                          }`}>
-                            {ratio.status}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="col-span-6 py-6 text-center text-slate-400 font-medium">
-                        No financial ratios calculated yet. Go to Financial Ratios to calculate.
-                      </div>
-                    )}
-                 </div>
+            {/* --- Charts Row 3: Financial Ratios --- */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm mb-6 flex flex-col min-w-0">
+              <div className="px-5 py-3.5 border-b border-[#e4e5e7] bg-[#f9fafd]">
+                <h3 className="text-[14px] font-semibold text-[#222]">Financial Ratios</h3>
               </div>
-
-              {/* Module records */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/60 shadow-sm lg:col-span-1 flex flex-col min-w-0">
-                 <h3 className="text-[15px] font-bold text-slate-900 mb-5 truncate">Module Records</h3>
-                 <div className="flex-1 overflow-y-auto border border-slate-100 bg-slate-50/50 rounded-xl divide-y divide-slate-200/60">
-                    {moduleRecordCounts.map((module) => (
-                      <button key={module.label} onClick={() => navigate(module.path)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white transition-colors">
-                        <p className="truncate text-[12px] font-semibold text-slate-600">{module.label}</p>
-                        <span className="rounded-md bg-indigo-100/70 px-2 py-0.5 text-[11px] font-bold tabular-nums text-indigo-700">{module.count}</span>
-                      </button>
-                    ))}
-                    {!moduleRecordCounts.length && <p className="p-4 text-center text-sm text-slate-400">Loading module data…</p>}
-                 </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-[#e4e5e7]">
+                {financialRatios.length > 0 ? (
+                  financialRatios.map((ratio, idx) => (
+                     <div key={idx} className="p-4 sm:p-5 flex flex-col items-center justify-center text-center hover:bg-[#f9fafd] transition-colors cursor-default">
+                       <span className="text-[12px] font-semibold text-[#555] mb-1.5">{ratio.label}</span>
+                       <span className="text-[18px] font-bold text-[#111] tabular-nums mb-2">{ratio.value}</span>
+                       <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-[3px] ${
+                         ratio.status === "Good" ? "bg-[#e6f8ef] text-[#00b365] border border-[#00b365]/30" : "bg-[#fde9e8] text-[#f0483e] border border-[#f0483e]/30"
+                       }`}>
+                         {ratio.status}
+                       </span>
+                     </div>
+                  ))
+                ) : (
+                  <div className="col-span-full py-8 text-center text-[#999] text-[13px]">
+                    No financial ratios calculated yet.
+                  </div>
+                )}
               </div>
-
             </div>
 
             {/* Footer */}
-            <footer className="flex flex-col md:flex-row items-center justify-between py-6 mt-4 border-t border-slate-200/60 text-[13px] text-slate-500 font-medium">
-              <p className="text-center md:text-left truncate w-full">© 2026 SHREE ANDAL AI Software Solutions. All rights reserved.</p>
-              <p className="mt-2 md:mt-0 whitespace-nowrap shrink-0">Powered by <span className="font-bold text-slate-900">SHREE ANDAL AI</span></p>
+            <footer className="py-6 text-[12px] text-[#777] flex flex-col md:flex-row items-center justify-between border-t border-[#e4e5e7] mt-8">
+              <p>© 2026 SHREE ANDAL AI Software Solutions. All rights reserved.</p>
+              <div className="flex gap-4 mt-2 md:mt-0">
+                <a href="#" className="hover:text-[#006aff]">Help</a>
+                <a href="#" className="hover:text-[#006aff]">Privacy</a>
+                <a href="#" className="hover:text-[#006aff]">Terms</a>
+              </div>
             </footer>
 
           </div>
@@ -1167,24 +1095,11 @@ const Dashboard = () => {
         <div className="fixed bottom-6 right-6 z-40">
           <button 
             onClick={() => setIsAiChatOpen(true)}
-            className="group relative flex items-center justify-center w-16 h-16 bg-white rounded-full shadow-2xl hover:shadow-indigo-500/30 hover:-translate-y-1 active:scale-95 transition-all duration-300 border border-slate-100 p-1 cursor-pointer"
-            title="Open AI Assistant"
+            className="w-14 h-14 bg-[#006aff] rounded-full shadow-[0_4px_15px_rgba(0,106,255,0.4)] hover:-translate-y-0.5 active:scale-95 transition-all duration-200 flex items-center justify-center relative border-2 border-white"
+            title="Ask AI Assistant"
           >
-            {/* The img tag using your uploaded image name */}
-            <img 
-              src="/image_f9d773.png" 
-              alt="AI Bot" 
-              className="w-full h-full object-cover rounded-full z-10"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                e.currentTarget.nextElementSibling?.classList.remove('hidden');
-              }} 
-            />
-            {/* Fallback Icon */}
-            <Bot className="hidden text-indigo-500 w-8 h-8 z-10" />
-            
-            {/* Notification Dot */}
-            <span className="absolute top-0 right-0 w-4 h-4 bg-rose-500 border-2 border-white rounded-full z-20 shadow-sm animate-pulse"></span>
+            <Bot className="text-white w-6 h-6" />
+            <span className="absolute top-0 right-0 w-3.5 h-3.5 bg-[#f0483e] border-2 border-white rounded-full"></span>
           </button>
         </div>
 
@@ -1195,78 +1110,126 @@ const Dashboard = () => {
       {/* Background Overlay for mobile */}
       {isAiChatOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[55] sm:hidden transition-opacity"
+          className="fixed inset-0 bg-[#111]/30 backdrop-blur-sm z-[55] sm:hidden transition-opacity"
           onClick={() => setIsAiChatOpen(false)} 
         />
       )}
 
       {/* The Chat Drawer */}
-      <div className={`fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.1)] z-[60] transform transition-transform duration-300 ease-in-out flex flex-col ${isAiChatOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white shadow-[-5px_0_30px_rgba(0,0,0,0.1)] z-[60] transform transition-transform duration-300 ease-in-out flex flex-col border-l border-[#ddd] ${isAiChatOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
         {/* Chat Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/80 backdrop-blur shrink-0">
+        <div className="flex items-center justify-between p-4 bg-[#006aff] text-white shrink-0">
           <div className="flex items-center gap-3">
-             <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm p-0.5">
-               <img src="/image_f9d773.png" alt="AI" className="w-full h-full object-cover rounded-full" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
-               <Bot className="hidden w-6 h-6 text-indigo-600" />
+             <div className="w-8 h-8 bg-white/20 rounded flex items-center justify-center">
+               <Bot className="w-5 h-5 text-white" />
              </div>
              <div>
-                <h3 className="font-bold text-[15px] text-slate-900 leading-tight">SHREE ANDAL AI</h3>
-                <p className="text-[10px] text-emerald-600 font-bold tracking-widest flex items-center gap-1.5 mt-0.5 uppercase">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Online
+                <h3 className="font-semibold text-[15px] leading-tight">SHREE ANDAL AI</h3>
+                <p className="text-[11px] text-[#cce3ff] flex items-center gap-1 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00e676]"></span> Online
                 </p>
              </div>
           </div>
-          <button 
-            onClick={() => setIsAiChatOpen(false)} 
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-full transition-colors"
-          >
-             <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Chat Messages Area */}
-        <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
-          {chatMessages.map((msg) => (
-            <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-              <div 
-                className={`max-w-[85%] p-3.5 rounded-2xl text-[13.5px] leading-relaxed shadow-sm ${
-                  msg.role === 'user' 
-                    ? 'bg-indigo-600 text-white rounded-tr-sm' 
-                    : 'bg-white border border-slate-100 text-slate-800 rounded-tl-sm'
-                }`}
-              >
-                {msg.content}
-              </div>
-              <span className="text-[10px] text-slate-400 font-medium mt-1.5 px-1">
-                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Chat Input Area */}
-        <form onSubmit={handleChatSubmit} className="p-4 border-t border-slate-100 bg-white shrink-0">
-          <div className="relative flex items-center">
-            <input 
-              type="text" 
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Type your message..."
-              className="w-full pl-4 pr-12 py-3.5 bg-slate-100/80 border border-transparent rounded-2xl text-[13px] font-medium focus:outline-none focus:bg-white focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-slate-400"
-            />
+          <div className="flex items-center gap-2">
             <button 
-              type="submit"
-              disabled={!chatInput.trim()}
-              className="absolute right-1.5 w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shadow-sm"
+              onClick={() => setChatViewMode(prev => prev === "chat" ? "history" : "chat")} 
+              title={chatViewMode === "chat" ? "View history" : "Back to chat"}
+              className="p-1.5 hover:bg-white/20 rounded transition-colors"
             >
-              <Send className="w-4 h-4 ml-0.5" />
+               <History className="w-[18px] h-[18px]" />
+            </button>
+            <button 
+              onClick={() => setIsAiChatOpen(false)} 
+              className="p-1.5 hover:bg-white/20 rounded transition-colors"
+            >
+               <X className="w-5 h-5" />
             </button>
           </div>
-          <p className="text-center text-[10px] text-slate-400 font-medium mt-3">
-            AI Assistant can make mistakes. Consider verifying.
-          </p>
-        </form>
+        </div>
+
+        {chatViewMode === "chat" ? (
+          <>
+            {/* Chat Messages Area */}
+            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#f9fafd]">
+              {chatMessages.map((msg) => (
+                <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div 
+                    className={`max-w-[85%] p-3 rounded-[4px] text-[13px] leading-relaxed ${
+                      msg.role === 'user' 
+                        ? 'bg-[#006aff] text-white shadow-sm' 
+                        : 'bg-white border border-[#e4e5e7] text-[#333] shadow-sm'
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                  <span className="text-[10px] text-[#999] font-medium mt-1">
+                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Chat Input Area */}
+            <form onSubmit={handleChatSubmit} className="p-4 bg-white border-t border-[#eee] shrink-0">
+              <div className="relative flex items-center">
+                <input 
+                  type="text" 
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Ask about your finances..."
+                  className="w-full pl-3 pr-10 py-2.5 bg-white border border-[#ccc] rounded-[4px] text-[13px] focus:outline-none focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] transition-shadow placeholder:text-[#999]"
+                />
+                <button 
+                  type="submit"
+                  disabled={!chatInput.trim()}
+                  className="absolute right-1.5 w-8 h-8 rounded bg-[#006aff] text-white flex items-center justify-center hover:bg-[#005cdb] disabled:opacity-50 disabled:hover:bg-[#006aff] transition-colors"
+                >
+                  <Send className="w-4 h-4 ml-0.5" />
+                </button>
+              </div>
+            </form>
+          </>
+        ) : (
+          /* History View Mode */
+          <div className="flex-1 flex flex-col overflow-hidden bg-[#f9fafd]">
+            <div className="px-5 py-3 border-b border-[#eee] bg-white flex items-center justify-between shrink-0">
+              <span className="text-[13px] font-semibold text-[#222]">Chat History</span>
+              <button 
+                onClick={handleClearChat}
+                className="text-[11px] font-medium text-[#f0483e] hover:underline"
+              >
+                Clear All
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {chatMessages.filter(msg => msg.role === 'user').length === 0 ? (
+                <div className="h-full flex items-center justify-center text-[#999] text-[13px]">
+                  No past queries found
+                </div>
+              ) : (
+                chatMessages.filter(msg => msg.role === 'user').map((msg, index) => (
+                  <button
+                    key={msg.id || index}
+                    onClick={() => {
+                      setChatInput(msg.content);
+                      setChatViewMode("chat");
+                    }}
+                    className="w-full text-left p-3 bg-white border border-[#e4e5e7] rounded-[4px] hover:border-[#006aff] transition-colors flex items-start gap-3"
+                  >
+                    <History className="w-[14px] h-[14px] text-[#999] mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-[#333] truncate">{msg.content}</p>
+                      <span className="text-[10px] text-[#888] block mt-0.5">
+                        {msg.timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

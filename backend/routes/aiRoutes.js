@@ -1,8 +1,27 @@
 import express from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { uploadInvoiceFile } from "../utils/invoiceStorage.js";
+import jwt from "jsonwebtoken";
+import ChatMessage from "../models/ChatMessage.js";
 
 const router = express.Router();
+
+// Middleware to verify JWT token
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ message: "Access denied. No token provided." });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(400).json({ message: "Invalid token" });
+  }
+};
 
 // Initialize Gemini AI lazily (after env is loaded by server.js)
 let genAI = null;
@@ -389,6 +408,69 @@ router.post("/extract-text", async (req, res) => {
       message: "Failed to extract text",
       error: error.message
     });
+  }
+});
+
+// GET /api/ai/chat-history
+router.get("/chat-history", verifyToken, async (req, res) => {
+  try {
+    const history = await ChatMessage.find({ userId: req.user.id }).sort({ timestamp: 1 });
+    res.json({
+      success: true,
+      history: history.map(msg => ({
+        id: msg._id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp
+      }))
+    });
+  } catch (error) {
+    console.error("Error fetching chat history:", error);
+    res.status(500).json({ success: false, message: "Failed to load chat history" });
+  }
+});
+
+// POST /api/ai/chat-message
+router.post("/chat-message", verifyToken, async (req, res) => {
+  try {
+    const { role, content } = req.body;
+    if (!role || !content) {
+      return res.status(400).json({ success: false, message: "Role and content are required" });
+    }
+
+    const newMessage = new ChatMessage({
+      userId: req.user.id,
+      role,
+      content,
+    });
+    await newMessage.save();
+
+    res.status(201).json({
+      success: true,
+      message: {
+        id: newMessage._id,
+        role: newMessage.role,
+        content: newMessage.content,
+        timestamp: newMessage.timestamp
+      }
+    });
+  } catch (error) {
+    console.error("Error saving chat message:", error);
+    res.status(500).json({ success: false, message: "Failed to save chat message" });
+  }
+});
+
+// DELETE /api/ai/chat-history - Clear chat
+router.delete("/chat-history", verifyToken, async (req, res) => {
+  try {
+    await ChatMessage.deleteMany({ userId: req.user.id });
+    res.json({
+      success: true,
+      message: "Chat history cleared successfully"
+    });
+  } catch (error) {
+    console.error("Error clearing chat history:", error);
+    res.status(500).json({ success: false, message: "Failed to clear chat history" });
   }
 });
 

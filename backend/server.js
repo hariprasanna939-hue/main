@@ -119,6 +119,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   name: { type: String },
+  role: { type: String, enum: ["admin", "instore"], default: "admin" },
   subscriptionStatus: { type: String, enum: ["pending", "active"], default: "pending" },
   subscriptionPlan: { type: String, enum: ["trial", "monthly", "annual", "lifetime"], default: "monthly" },
   subscriptionAmount: { type: Number },
@@ -135,7 +136,7 @@ const User = mongoose.model("User", userSchema);
 // ✅ REGISTER (Sign Up)
 app.post("/api/signup", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role = "admin" } = req.body;
 
     if (!email || !password)
       return res.status(400).json({ message: "Email and password are required" });
@@ -145,12 +146,12 @@ app.post("/api/signup", async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ email, password: hashedPassword });
+    const newUser = new User({ email, password: hashedPassword, role });
     await newUser.save();
 
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
-    res.status(201).json({ message: "User registered successfully", token });
+    res.status(201).json({ message: "User registered successfully", token, user: { role: newUser.role } });
   } catch (error) {
     if (error.code === 11000)
       return res.status(400).json({ message: "Email already exists" });
@@ -163,7 +164,7 @@ app.post("/api/signup", async (req, res) => {
 // ✅ START FREE TRIAL
 app.post("/api/signup-trial", async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, role = "admin" } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password are required" });
@@ -189,6 +190,7 @@ app.post("/api/signup-trial", async (req, res) => {
       subscriptionStartDate,
       subscriptionEndDate: trialEndDate,
       trialEndDate,
+      role
     });
 
     await newUser.save();
@@ -202,6 +204,7 @@ app.post("/api/signup-trial", async (req, res) => {
         id: newUser._id,
         email: newUser.email,
         name: newUser.name,
+        role: newUser.role,
         subscriptionStatus: newUser.subscriptionStatus,
         subscriptionPlan: newUser.subscriptionPlan,
         subscriptionAmount: newUser.subscriptionAmount,
@@ -223,13 +226,17 @@ app.post("/api/signup-trial", async (req, res) => {
 // ✅ LOGIN (Sign In)
 app.post("/api/signin", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role = "admin" } = req.body;
 
     if (!email || !password)
       return res.status(400).json({ message: "Email and password are required" });
 
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "User not found" });
+
+    if (user.role && user.role !== role) {
+      return res.status(400).json({ message: `Access denied. Account is configured as ${user.role.toUpperCase()} role.` });
+    }
 
     const validPass = await bcrypt.compare(password, user.password);
     if (!validPass) return res.status(400).json({ message: "Invalid password" });
@@ -243,6 +250,7 @@ app.post("/api/signin", async (req, res) => {
         id: user._id,
         email: user.email,
         name: user.name,
+        role: user.role,
         subscriptionStatus: user.subscriptionStatus,
         subscriptionPlan: user.subscriptionPlan,
         subscriptionAmount: user.subscriptionAmount,
@@ -284,6 +292,7 @@ app.get("/api/user", verifyToken, async (req, res) => {
       email: user.email,
       name: user.name,
       id: user._id,
+      role: user.role,
       subscriptionStatus: user.subscriptionStatus,
       subscriptionPlan: user.subscriptionPlan,
       subscriptionAmount: user.subscriptionAmount,
@@ -482,7 +491,8 @@ app.post("/api/verify-payment", async (req, res) => {
       email,
       password,
       plan = "monthly",
-      name
+      name,
+      role = "admin"
     } = req.body;
 
     if (!email || !password) {
@@ -528,7 +538,8 @@ app.post("/api/verify-payment", async (req, res) => {
         subscriptionStartDate: subscriptionStartDate,
         subscriptionEndDate: subscriptionEndDate,
         razorpayPaymentId: "dev_payment_" + Date.now(),
-        razorpayOrderId: razorpay_order_id || "dev_order_" + Date.now()
+        razorpayOrderId: razorpay_order_id || "dev_order_" + Date.now(),
+        role
       });
 
       await newUser.save();
@@ -540,7 +551,8 @@ app.post("/api/verify-payment", async (req, res) => {
         token,
         subscriptionStatus: "active",
         subscriptionPlan: plan,
-        subscriptionEndDate: subscriptionEndDate
+        subscriptionEndDate: subscriptionEndDate,
+        role: newUser.role
       });
     }
 
@@ -573,7 +585,8 @@ app.post("/api/verify-payment", async (req, res) => {
       subscriptionStartDate: subscriptionStartDate,
       subscriptionEndDate: subscriptionEndDate,
       razorpayPaymentId: razorpay_payment_id,
-      razorpayOrderId: razorpay_order_id
+      razorpayOrderId: razorpay_order_id,
+      role
     });
 
     await newUser.save();
@@ -585,7 +598,8 @@ app.post("/api/verify-payment", async (req, res) => {
       token,
       subscriptionStatus: "active",
       subscriptionPlan: plan,
-      subscriptionEndDate: subscriptionEndDate
+      subscriptionEndDate: subscriptionEndDate,
+      role: newUser.role
     });
   } catch (error) {
     console.error("Verify Payment Error:", error);
