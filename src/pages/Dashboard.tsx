@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowRight,
   BanknoteIcon,
   BarChart3,
   Building2,
@@ -12,7 +11,6 @@ import {
   FolderArchive,
   LogOut,
   Package,
-  Search,
   Settings,
   Shield,
   Sparkles,
@@ -21,21 +19,19 @@ import {
   Home,
   BookOpen,
   Receipt,
-  RefreshCw,
   BarChart2,
-  Bell,
   Menu,
-  ArrowUpRight,
-  ArrowDownRight,
   X,
   Send,
   Bot,
-  Trash2,
   History,
-  Plus
+  Download,
+  Landmark,
+  PieChart,
+  Activity,
+  RefreshCw
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { API_ENDPOINTS, API_BASE_URL, apiRequest } from "@/lib/api";
@@ -61,7 +57,7 @@ type DashboardModule = {
   title: string;
   description: string;
   output: string;
-  icon: typeof Users;
+  icon: React.ElementType;
   path: string;
 };
 
@@ -89,14 +85,10 @@ const dashboardModules: DashboardModule[] = [
   { title: "Invoice Automation", description: "OCR scanning, voice input, and smart processing.", output: "", icon: FolderArchive, path: "/invoice" },
 ];
 
-type Mode = "assistant" | "automation";
-
 const emptyStats = [
   { title: "Total Receivables", amount: "", trend: "", isPositive: true, iconColor: "text-[#006aff]", icon: TrendingUp },
   { title: "Total Payables", amount: "", trend: "", isPositive: true, iconColor: "text-[#f0483e]", icon: Receipt },
   { title: "Net Profit", amount: "", trend: "", isPositive: true, iconColor: "text-[#00b365]", icon: BarChart2 },
-  { title: "Cash at Bank", amount: "", trend: "", isPositive: true, iconColor: "text-[#8e24aa]", icon: RefreshCw },
-  { title: "Outstanding Inv", amount: "", trend: "", isPositive: false, iconColor: "text-[#f57c00]", icon: FileText },
   { title: "GST Payable", amount: "", trend: "", isPositive: true, iconColor: "text-[#0288d1]", icon: Receipt },
 ];
 
@@ -130,7 +122,6 @@ const isDateInPeriod = (dateInput: any, period: string): boolean => {
 
 const toNumber = (value: unknown) => Number(value) || 0;
 const formatCurrency = (value: unknown) => `₹${toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const formatPeriod = (value?: string) => value || "—";
 
 // --- Main Component ---
 
@@ -140,15 +131,9 @@ const Dashboard = () => {
   
   // State
   const [loading, setLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [inputValue, setInputValue] = useState("");
-  const [mode, setMode] = useState<Mode>("assistant");
   
-  // Active path for sidebar highlighting
-  const [activePath, setActivePath] = useState("/");
-
   // Period filtering & Raw Datasets States
   const [selectedPeriod, setSelectedPeriod] = useState<string>("last-month");
   const [allInvoices, setAllInvoices] = useState<any[]>([]);
@@ -168,16 +153,8 @@ const Dashboard = () => {
     grossProfitMargin: 0,
     netProfitMargin: 0
   });
-  const [expenseBreakdown, setExpenseBreakdown] = useState({
-    goods: 42,
-    salaries: 25,
-    rent: 12,
-    utilities: 8,
-    others: 13
-  });
-  const [cashFlowEntries, setCashFlowEntries] = useState<any[]>([]);
+  const [bsSummary, setBsSummary] = useState({ assets: 0, liabilities: 0, equity: 0 });
   const [cashFlowStatements, setCashFlowStatements] = useState<any[]>([]);
-  const [moduleRecordCounts, setModuleRecordCounts] = useState<{ label: string; count: number; path: string }[]>([]);
 
   // AI Chat States
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
@@ -187,6 +164,13 @@ const Dashboard = () => {
   ]);
   const [chatViewMode, setChatViewMode] = useState<"chat" | "history">("chat");
   const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatMessages, chatViewMode]);
 
   // Fetching Logic
   useEffect(() => {
@@ -244,26 +228,7 @@ const Dashboard = () => {
       .finally(() => setLoading(false));
   }, [navigate, toast]);
 
-  // Trial Expiry Timer
-  useEffect(() => {
-    if (!user) return;
-
-    const timer = window.setInterval(() => {
-      if (isTrialExpired(user)) {
-        toast({
-          variant: "destructive",
-          title: "Free trial ended",
-          description: "Your trial session has expired. Please choose a paid plan to continue.",
-        });
-        localStorage.removeItem("token");
-        navigate("/auth?tab=signup&plan=monthly");
-      }
-    }, 60000);
-
-    return () => window.clearInterval(timer);
-  }, [navigate, toast, user]);
-
-  // Load each dashboard value from the module that owns it
+  // Load Dashboard Data
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -276,66 +241,37 @@ const Dashboard = () => {
         };
 
         const invoicesRes = await apiRequest(`${API_ENDPOINTS.INVOICE}/all?limit=100`).catch(() => null);
-        let invoicesData = [];
         if (invoicesRes && invoicesRes.ok) {
           const parsed = await invoicesRes.json();
-          if (parsed && parsed.invoices) {
-            invoicesData = parsed.invoices;
-            setAllInvoices(parsed.invoices);
-          }
+          if (parsed && parsed.invoices) setAllInvoices(parsed.invoices);
         }
 
         const purchasesRes = await apiRequest(`${API_BASE_URL}/purchase-invoice/all`).catch(() => null);
-        let purchasesData = [];
         if (purchasesRes && purchasesRes.ok) {
           const parsed = await purchasesRes.json();
-          if (parsed && parsed.invoices) {
-            purchasesData = parsed.invoices;
-            setAllPurchaseInvoices(parsed.invoices);
-          }
+          if (parsed && parsed.invoices) setAllPurchaseInvoices(parsed.invoices);
         }
 
         const payrollRes = await apiRequest(`${API_BASE_URL}/payroll/all`).catch(() => null);
-        let payrollData = [];
         if (payrollRes && payrollRes.ok) {
           const parsed = await payrollRes.json();
-          if (parsed) {
-            payrollData = parsed;
-            setAllPayrolls(parsed);
-          }
+          if (parsed) setAllPayrolls(parsed);
         }
 
         const balanceSheetsRes = await apiRequest(`${API_BASE_URL}/balance`).catch(() => null);
-        let balanceSheetsData = [];
         if (balanceSheetsRes && balanceSheetsRes.ok) {
           const parsed = await balanceSheetsRes.json();
-          if (parsed) {
-            balanceSheetsData = parsed;
-            setAllBalanceSheets(parsed);
-          }
+          if (parsed) setAllBalanceSheets(parsed);
         }
 
-        const ratiosRes = await apiRequest(`${API_BASE_URL}/financial-ratios/history`).catch(() => null);
-        let ratiosHistory = null;
-        if (ratiosRes && ratiosRes.ok) {
-          ratiosHistory = await ratiosRes.json();
-        }
-
-        const [invoiceStats, cashflows, statements, bookkeeping, inventory, taxRecords, balanceSummary] = await Promise.all([
-          readJson(`${API_ENDPOINTS.INVOICE}/stats/overview`),
-          readJson(`${API_BASE_URL}/cashflow/all`),
+        const [statements, bookkeeping] = await Promise.all([
           readJson(`${API_BASE_URL}/cashflow-statement/all`),
-          readJson(`${API_BASE_URL}/bookkeeping/all`),
-          readJson(`${API_BASE_URL}/inventory/all`),
-          readJson(`${API_ENDPOINTS.TAX}/all`),
-          readJson(`${API_ENDPOINTS.BALANCE}/summary`),
+          readJson(`${API_BASE_URL}/bookkeeping/all`)
         ]);
 
-        const cashFlowData = Array.isArray(cashflows) ? cashflows : [];
         const cashFlowStatementData = Array.isArray(statements) ? statements : [];
-        const inventoryItems = Array.isArray(inventory) ? inventory : [];
-        const gstRecords = Array.isArray(taxRecords) ? taxRecords : [];
         const bookkeepingEntries = Array.isArray(bookkeeping?.entries) ? bookkeeping.entries : [];
+        
         const now = new Date();
         const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -344,17 +280,8 @@ const Dashboard = () => {
           return !Number.isNaN(createdAt.getTime()) && createdAt >= lastMonthStart && createdAt < currentMonthStart;
         });
 
-        setCashFlowEntries(cashFlowData);
         setCashFlowStatements(lastMonthCashFlowStatements);
         setAllBookkeepingEntries(bookkeepingEntries);
-        setModuleRecordCounts([
-          { label: "Sales Invoices", count: toNumber(invoiceStats?.overall?.totalInvoices), path: "/invoice" },
-          { label: "Purchase Bills", count: purchasesData.length, path: "/invoice" },
-          { label: "Bank Transactions", count: cashFlowData.length, path: "/cashflow" },
-          { label: "Manual Journals", count: bookkeepingEntries.length, path: "/bookkeeping" },
-          { label: "Items & Inventory", count: inventoryItems.length, path: "/inventory" },
-          { label: "Tax Returns", count: gstRecords.length, path: "/tax-gst" },
-        ]);
 
       } catch (err) {
         console.error("Error loading dashboard data:", err);
@@ -379,14 +306,11 @@ const Dashboard = () => {
     const selectedPeriodBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, selectedPeriod));
     const bkIncome = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
     const bkExpense = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
-    const bkNet = bkIncome - bkExpense;
 
     setDashboardStats([
       { title: "Total Receivables", amount: bkIncome > 0 ? formatCurrency(bkIncome) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#006aff]", icon: TrendingUp },
       { title: "Total Payables", amount: bkExpense > 0 ? formatCurrency(bkExpense) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#f0483e]", icon: Receipt },
-      { title: "Net Profit", amount: "₹0.00", trend: "", isPositive: true, hasData: false, iconColor: "text-[#00b365]", icon: BarChart2 },
-      { title: "Cash at Bank", amount: formatCurrency(bkNet), trend: "", isPositive: bkNet >= 0, hasData: true, iconColor: "text-[#8e24aa]", icon: RefreshCw },
-      { title: "Outstanding Inv", amount: "₹0.00", trend: "", isPositive: false, hasData: false, iconColor: "text-[#f57c00]", icon: FileText },
+      { title: "Net Profit", amount: profit !== 0 ? formatCurrency(profit) : "₹0.00", trend: "", isPositive: profit >= 0, hasData: profit !== 0, iconColor: "text-[#00b365]", icon: BarChart2 },
       { title: "GST Payable", amount: "₹0.00", trend: "", isPositive: true, hasData: false, iconColor: "text-[#0288d1]", icon: Receipt },
     ]);
 
@@ -397,18 +321,6 @@ const Dashboard = () => {
       grossProfitMargin: revenue > 0 ? ((revenue - purchaseExpenses) / revenue) * 100 : 0,
       netProfitMargin: revenue > 0 ? (profit / revenue) * 100 : 0
     });
-
-    if (expenses > 0) {
-      setExpenseBreakdown({
-        goods: Math.round((purchaseExpenses / expenses) * 100),
-        salaries: Math.round((payrollExpenses / expenses) * 100),
-        rent: 0,
-        utilities: 0,
-        others: 0
-      });
-    } else {
-      setExpenseBreakdown({ goods: 0, salaries: 0, rent: 0, utilities: 0, others: 0 });
-    }
 
     const selectedPeriodInvoices = allInvoices.filter(inv => isDateInPeriod(inv.invoiceDate, selectedPeriod));
     const mappedInvoices = selectedPeriodInvoices.slice(0, 5).map((inv: any) => {
@@ -430,9 +342,7 @@ const Dashboard = () => {
     setInvoicesList(mappedInvoices);
 
     let matchingBS = allBalanceSheets.find(bs => isDateInPeriod(bs.createdAt, selectedPeriod));
-    if (!matchingBS && allBalanceSheets.length > 0) {
-      matchingBS = allBalanceSheets[0];
-    }
+    if (!matchingBS && allBalanceSheets.length > 0) matchingBS = allBalanceSheets[0];
 
     if (matchingBS) {
       const bsCurrentAssets = matchingBS.currentAssets || 0;
@@ -441,6 +351,8 @@ const Dashboard = () => {
       const bsTotalEquity = matchingBS.equity || 0;
       const bsTotalDebt = matchingBS.totalLiabilities || 0;
       
+      setBsSummary({ assets: bsTotalAssets, liabilities: bsTotalDebt || bsCurrentLiabilities, equity: bsTotalEquity });
+
       let bsInventory = 0;
       if (matchingBS.breakdown?.assets?.currentAssets) {
         const invItem = matchingBS.breakdown.assets.currentAssets.find((item: any) => 
@@ -465,6 +377,7 @@ const Dashboard = () => {
         { label: "ROE", value: `${roe.toFixed(2)}%`, status: "Good" },
       ]);
     } else {
+      setBsSummary({ assets: 0, liabilities: 0, equity: 0 });
       setFinancialRatios([
         { label: "Current Ratio", value: "0.00", status: "Low" },
         { label: "Quick Ratio", value: "0.00", status: "Low" },
@@ -475,7 +388,7 @@ const Dashboard = () => {
       ]);
     }
 
-  }, [allInvoices, allPurchaseInvoices, allPayrolls, allBalanceSheets, selectedPeriod]);
+  }, [allInvoices, allPurchaseInvoices, allPayrolls, allBalanceSheets, selectedPeriod, allBookkeepingEntries]);
 
   const formatYAxis = (val: number) => {
     if (val >= 10000000) return `${(val / 10000000).toFixed(1)}Cr`;
@@ -557,7 +470,7 @@ const Dashboard = () => {
       return { inflow, outflow, label };
     });
 
-    const maxVal = Math.max(...buckets.flatMap(b => [b.inflow, b.outflow]), 1000);
+    const maxVal = Math.max(...buckets.map(b => Math.max(b.inflow, b.outflow)), 1000);
     const bars = buckets.map(b => ({
       inflowHeight: `${(b.inflow / maxVal) * 100}%`,
       outflowHeight: `${(b.outflow / maxVal) * 100}%`,
@@ -592,35 +505,30 @@ const Dashboard = () => {
     return dashboardModules;
   }, [user]);
   
-  const latestCashFlowStatement = useMemo(() => {
+  // Safely Extract Cash Flow Statement Values
+  const { cfsInflow, cfsOutflow, cfsNetFlow } = useMemo(() => {
+    let inflow = 0;
+    let outflow = 0;
+    let net = 0;
+    
     if (cashFlowStatements && cashFlowStatements.length > 0) {
-      return cashFlowStatements[0];
+      const stmt = cashFlowStatements[0];
+      inflow = Number(stmt?.totalInflow || stmt?.inflow || stmt?.totalInflows || 0);
+      outflow = Number(stmt?.totalOutflow || stmt?.outflow || stmt?.totalOutflows || 0);
+      net = Number(stmt?.netCashFlow || stmt?.netFlow || (inflow - outflow) || 0);
+    } else {
+      const lastMonthBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, "last-month"));
+      inflow = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
+      outflow = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
+      net = inflow - outflow;
     }
-    const lastMonthBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, "last-month"));
-    const bkIncome = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
-    const bkExpense = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
-    const bkNet = bkIncome - bkExpense;
-
-    return {
-      period: "July 2026",
-      totalInflow: bkIncome,
-      totalOutflow: bkExpense,
-      netCashFlow: bkNet
-    };
+    
+    return { cfsInflow: inflow, cfsOutflow: outflow, cfsNetFlow: net };
   }, [cashFlowStatements, allBookkeepingEntries]);
 
   const handleSignOut = () => {
     localStorage.removeItem("token");
     navigate("/auth");
-  };
-
-  const handleMainSearchSubmit = () => {
-    if (!inputValue.trim()) return;
-    toast({
-      title: mode === "assistant" ? "AI Search" : "Automation Executed",
-      description: inputValue.trim(),
-    });
-    setInputValue("");
   };
 
   const handleClearChat = async () => {
@@ -637,6 +545,86 @@ const Dashboard = () => {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleDownload = (reportType: string) => {
+    let filename = `${reportType.toLowerCase().replace(/\s+/g, "_")}_report.txt`;
+    let content = "";
+    
+    const nowStr = new Date().toLocaleString();
+    content += `=========================================\n`;
+    content += `  SHREE ANDAL AI - FINANCIAL REPORT      \n`;
+    content += `  Report: ${reportType}                  \n`;
+    content += `  Generated: ${nowStr}                   \n`;
+    content += `  Period: ${selectedPeriod}              \n`;
+    content += `=========================================\n\n`;
+
+    if (reportType === "Cash Flow Prediction") {
+      content += `Month\t\tActual Inflow\tActual Outflow\n`;
+      cashFlowStatements.forEach(stmt => {
+        const inflow = Number(stmt?.totalInflow || stmt?.inflow || 0);
+        const outflow = Number(stmt?.totalOutflow || stmt?.outflow || 0);
+        content += `${stmt.period || "Period"}\t₹${inflow.toLocaleString()}\t₹${outflow.toLocaleString()}\n`;
+      });
+      content += `\n* Forecast for Next Month (Est):\n`;
+      content += `Inflow Estimate: +70% of Maximum Value\n`;
+      content += `Outflow Estimate: +40% of Maximum Value\n`;
+    } else if (reportType === "Profit and Loss") {
+      content += `Total Income: ₹${plSummaryData.totalRevenue.toLocaleString("en-IN")}\n`;
+      content += `Total Expenses: ₹${plSummaryData.totalExpenses.toLocaleString("en-IN")}\n`;
+      content += `Gross Margin: ${plSummaryData.grossProfitMargin.toFixed(2)}%\n`;
+      content += `Net Margin: ${plSummaryData.netProfitMargin.toFixed(2)}%\n`;
+      content += `-----------------------------------------\n`;
+      content += `Net Profit: ₹${plSummaryData.netProfit.toLocaleString("en-IN")}\n`;
+    } else if (reportType === "Recent Invoices") {
+      content += `Invoice ID\tCompany\tAmount\tStatus\n`;
+      invoicesList.forEach(inv => {
+        content += `${inv.id}\t${inv.company}\t${inv.amount}\t${inv.status}\n`;
+      });
+    } else if (reportType === "Cash Flow Statement") {
+      content += `Operating Activities: +₹${(cfsInflow * 0.8).toLocaleString()}\n`;
+      content += `Investing Activities: -₹${(cfsOutflow * 0.3).toLocaleString()}\n`;
+      content += `Financing Activities: +₹${(cfsInflow * 0.2).toLocaleString()}\n`;
+      content += `-----------------------------------------\n`;
+      content += `Net Cash Flow: ₹${cfsNetFlow.toLocaleString()}\n`;
+    } else if (reportType === "Financial Ratios") {
+      financialRatios.forEach(ratio => {
+        content += `${ratio.label}: ${ratio.value} (${ratio.status})\n`;
+      });
+    } else if (reportType === "Income and Expense") {
+      content += `Overall Income: ₹${plSummaryData.totalRevenue.toLocaleString()}\n`;
+      content += `Overall Expense: ₹${plSummaryData.totalExpenses.toLocaleString()}\n`;
+    } else if (reportType === "Balance Sheet Overview") {
+      content += `Total Assets: ₹${bsSummary.assets.toLocaleString()}\n`;
+      content += `Total Liabilities: ₹${bsSummary.liabilities.toLocaleString()}\n`;
+      content += `-----------------------------------------\n`;
+      content += `Total Equity: ₹${bsSummary.equity.toLocaleString()}\n`;
+    } else if (reportType === "Tax and GST Analysis") {
+      const outputGst = plSummaryData.totalRevenue * 0.18;
+      const inputItc = plSummaryData.totalExpenses * 0.18;
+      const netGst = Math.max(0, outputGst - inputItc);
+      content += `Output GST (18% on revenue): ₹${outputGst.toLocaleString()}\n`;
+      content += `Input ITC (18% on expenses): ₹${inputItc.toLocaleString()}\n`;
+      content += `-----------------------------------------\n`;
+      content += `Net GST Payable: ₹${netGst.toLocaleString()}\n`;
+    } else {
+      content += `No detailed data available.`;
+    }
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Report Downloaded",
+      description: `Successfully downloaded ${filename}`,
+    });
   };
 
   const handleChatSubmit = async (e?: React.FormEvent) => {
@@ -670,9 +658,108 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#f4f5f8] font-sans text-[#333] overflow-hidden selection:bg-[#006aff]/20 selection:text-[#006aff]">
+    <div className="flex flex-col h-screen bg-[#f4f5f8] font-sans text-[#333] overflow-hidden selection:bg-[#006aff]/20 selection:text-[#006aff]">
       
-      {/* Mobile Sidebar Overlay */}
+      {/* Top Header & Navigation Container */}
+      <header className="h-[60px] bg-white border-b border-[#e4e5e7] flex items-center justify-between px-6 z-20 shrink-0 sticky top-0 shadow-sm">
+        
+        {/* Left Side: Brand Logo & Nav */}
+        <div className="flex items-center gap-10 h-full">
+          
+          {/* Brand Logo */}
+          <div className="flex flex-col justify-center select-none">
+            <span className="font-bold text-[16px] tracking-tight text-[#006aff] leading-none mb-1">
+              SHREE ANDAL AI
+            </span>
+            <span className="text-[10px] text-[#555] uppercase tracking-wider font-bold leading-none">
+              Books & Accounting
+            </span>
+          </div>
+
+          {/* Horizontal Navigation */}
+          <nav className="hidden lg:flex items-center gap-6 h-full">
+            <button onClick={() => navigate("/inventory")} className="text-[14px] font-medium text-[#333] hover:text-[#006aff] transition-colors h-full flex items-center">Inventory</button>
+            <button onClick={() => navigate("/invoice")} className="text-[14px] font-medium text-[#333] hover:text-[#006aff] transition-colors h-full flex items-center">Invoice</button>
+            <button onClick={() => navigate("/bookkeeping")} className="text-[14px] font-medium text-[#333] hover:text-[#006aff] transition-colors h-full flex items-center">Bookkeeping</button>
+
+            {/* Dropdown for All Products */}
+            <div className="relative group flex items-center h-full">
+              <div className="flex items-center gap-1 cursor-pointer text-[14px] font-medium text-[#333] group-hover:text-[#006aff] transition-colors h-full">
+                All Products <ChevronDown className="w-4 h-4 text-[#777] group-hover:text-[#006aff] transition-transform" />
+              </div>
+              
+              {/* Dropdown Menu */}
+              <div className="absolute top-[100%] left-0 w-[260px] bg-white rounded-md shadow-[0_4px_15px_rgba(0,0,0,0.1)] border border-[#e4e5e7] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform origin-top-left z-50">
+                <div className="py-2 max-h-[400px] overflow-y-auto">
+                  {filteredModules
+                    .filter(m => !["/inventory", "/invoice", "/bookkeeping", "/"].includes(m.path))
+                    .map(module => {
+                      const Icon = module.icon;
+                      return (
+                        <button
+                          key={module.path}
+                          onClick={() => navigate(module.path)}
+                          className="w-full text-left px-4 py-2.5 text-[13px] text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff] flex items-center gap-3 transition-colors"
+                        >
+                          <Icon className="w-4 h-4 shrink-0 text-[#777]" />
+                          <span className="truncate">{module.title}</span>
+                        </button>
+                      )
+                  })}
+                </div>
+              </div>
+            </div>
+          </nav>
+
+          {/* Mobile menu trigger */}
+          <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 text-[#555] hover:bg-[#f4f5f8] rounded lg:hidden flex-shrink-0 ml-auto">
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Right Side: User Profile */}
+        <div className="flex items-center h-full">
+          <div className="flex items-center gap-2.5 pl-4 cursor-pointer group relative h-full shrink-0">
+             <div className="w-8 h-8 rounded-full bg-[#f2f8ff] border border-[#cce3ff] flex items-center justify-center text-[#006aff] font-bold text-[14px] shrink-0">
+                {loading ? "-" : profileInitial}
+             </div>
+             <div className="hidden md:flex flex-col min-w-0">
+                <span className="text-[14px] font-semibold text-[#222] leading-none truncate max-w-[120px]">{loading ? "Loading..." : profileName}</span>
+             </div>
+             <ChevronDown className="hidden md:block w-4 h-4 text-[#999] shrink-0" />
+             
+             {/* Profile Dropdown Menu */}
+             <div className="absolute right-0 top-[100%] w-[250px] bg-white rounded-md shadow-[0_4px_15px_rgba(0,0,0,0.1)] border border-[#e4e5e7] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform origin-top-right">
+                <div className="p-3 border-b border-[#eee]">
+                   <p className="text-[13px] font-bold text-[#222] truncate">{profileName}</p>
+                   <p className="text-[11px] text-[#777] mt-0.5 truncate">{user?.email}</p>
+                   <div className="flex flex-wrap gap-1.5 mt-2">
+                     <div className="inline-block px-2 py-0.5 bg-[#e8f2ff] text-[#006aff] text-[10px] font-bold uppercase rounded-sm border border-[#cce3ff]">
+                       {selectedPlanLabel} Plan
+                     </div>
+                     <div className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded-sm border ${
+                       user?.role === "instore" 
+                         ? "bg-[#fff8e1] text-[#f57c00] border-[#f57c00]/30" 
+                         : "bg-[#e6f8ef] text-[#00b365] border-[#00b365]/30"
+                     }`}>
+                       {user?.role === "instore" ? "In-Store POS" : "Admin Portal"}
+                     </div>
+                   </div>
+                </div>
+                <div className="py-1">
+                  <button onClick={() => navigate("/profile")} className="w-full text-left px-4 py-2 text-[13px] text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff] flex items-center gap-2 transition-colors">
+                    <Settings className="w-[14px] h-[14px]" /> Account Settings
+                  </button>
+                  <button onClick={handleSignOut} className="w-full text-left px-4 py-2 text-[13px] text-[#f0483e] hover:bg-[#fde9e8] flex items-center gap-2 transition-colors">
+                    <LogOut className="w-[14px] h-[14px]" /> Sign Out
+                  </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Mobile Sidebar Overlay & Nav */}
       {mobileSidebarOpen && (
         <div
           role="presentation"
@@ -681,418 +768,439 @@ const Dashboard = () => {
         />
       )}
 
-      {/* Sidebar - Deep Navy Classic ERP Style */}
+      {/* Mobile Nav Menu (Sliding from left) */}
       <aside 
-        className={`fixed inset-y-0 left-0 z-[45] bg-[#1c2434] border-r border-[#111827] flex flex-col transition-all duration-300 ease-in-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[45] w-[260px] bg-white border-r border-[#e4e5e7] flex flex-col transition-transform duration-300 ease-in-out lg:hidden ${
           mobileSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
-        } ${sidebarOpen ? 'w-[260px]' : 'w-20'}`}
+        }`}
       >
-        {/* Sidebar Header */}
-        <div className="h-[60px] flex items-center px-4 border-b border-[#2d3748] shrink-0">
-          <button 
-            onClick={() => {
-              if (window.innerWidth >= 1024) setSidebarOpen(!sidebarOpen);
-              else setMobileSidebarOpen(false);
-            }}
-            className="w-8 h-8 bg-[#006aff] rounded flex items-center justify-center text-white font-bold text-[16px] mr-3 shrink-0 shadow-sm focus:outline-none"
-          >
-            S
+        <div className="h-[60px] flex items-center px-4 border-b border-[#e4e5e7] shrink-0 justify-between">
+          <div className="flex flex-col justify-center">
+            <span className="font-bold text-[15px] tracking-tight text-[#006aff] leading-none mb-1 truncate">SHREE ANDAL AI</span>
+            <span className="text-[10px] text-[#555] uppercase tracking-wider font-bold leading-none truncate">Books & Accounting</span>
+          </div>
+          <button onClick={() => setMobileSidebarOpen(false)} className="p-1.5 text-[#555] hover:bg-[#f4f5f8] rounded">
+            <X className="w-5 h-5" />
           </button>
-          
-          {sidebarOpen && (
-            <div className="flex flex-col justify-center overflow-hidden whitespace-nowrap min-w-0">
-              <span className="font-bold text-[15px] tracking-tight text-white leading-none mb-1 truncate">SHREE ANDAL AI</span>
-              <span className="text-[10px] text-[#8a99a8] uppercase tracking-wider font-semibold leading-none truncate">Books & Accounting</span>
-            </div>
-          )}
         </div>
-
-        {/* Sidebar Navigation */}
         <ScrollArea className="flex-1 py-3">
           <nav className="space-y-0.5 px-3">
             {filteredModules.map((module) => {
               const Icon = module.icon;
-              const isActive = activePath === module.path;
               return (
                 <button
                   key={module.path}
                   onClick={() => {
-                    setActivePath(module.path);
                     navigate(module.path);
-                    if(window.innerWidth < 1024) setMobileSidebarOpen(false);
+                    setMobileSidebarOpen(false);
                   }}
-                  title={!sidebarOpen ? module.title : undefined}
-                  className={`w-full flex items-center px-3 py-2 rounded-[4px] transition-colors group ${
-                    isActive 
-                      ? 'bg-[#006aff] text-white' 
-                      : 'text-[#8a99a8] hover:bg-[#2a3143] hover:text-white'
-                  }`}
+                  className="w-full text-left px-3 py-2 text-[14px] text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff] flex items-center gap-3 transition-colors rounded"
                 >
-                  <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-white' : 'text-[#8a99a8] group-hover:text-white'}`} />
-                  {sidebarOpen && (
-                    <>
-                      <span className="ml-3 text-[13px] font-medium truncate">{module.title}</span>
-                      {!isActive && <ChevronDown className="w-[14px] h-[14px] ml-auto opacity-0 group-hover:opacity-100 -rotate-90 transition-all shrink-0" />}
-                    </>
-                  )}
+                  <Icon className="w-4 h-4 shrink-0 text-[#777]" />
+                  <span className="truncate font-medium">{module.title}</span>
                 </button>
-              );
+              )
             })}
           </nav>
         </ScrollArea>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+      <main className="flex-1 overflow-y-auto relative w-full">
         
-        {/* Top Header */}
-        <header className="h-[60px] bg-white border-b border-[#e4e5e7] flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 sticky top-0">
+        <div className="p-6 lg:p-10 max-w-[1400px] mx-auto w-full">
           
-          <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-            <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 -ml-1.5 text-[#555] hover:bg-[#f4f5f8] rounded lg:hidden flex-shrink-0">
-              <Menu className="w-5 h-5" />
-            </button>
-            
-            <div className="relative w-full max-w-[400px] flex items-center">
-              <Search className="w-[15px] h-[15px] absolute left-3 text-[#999]" />
-              <input 
-                id="main-search-input"
-                type="text" 
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleMainSearchSubmit(); } }}
-                placeholder="Search in your organization..."
-                className="w-full pl-9 pr-4 py-1.5 bg-[#f4f5f8] border border-transparent rounded-[4px] text-[13px] text-[#333] focus:outline-none focus:bg-white focus:border-[#006aff] transition-all placeholder:text-[#999] h-8"
-              />
+          {/* Page Title & Period Selector */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 pt-4">
+            <div>
+              <h1 className="text-[26px] font-bold text-[#111] tracking-tight">Dashboard</h1>
+              <p className="text-[14px] text-[#666] mt-1">Overview of your business financials.</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[12px] font-semibold text-[#555] uppercase tracking-wide">Period:</span>
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="w-full sm:w-[160px] text-[14px] font-medium px-3 py-2 border border-[#ccc] rounded text-[#222] bg-white hover:border-[#aaa] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] transition-all outline-none cursor-pointer"
+              >
+                <option value="this-month">This Month</option>
+                <option value="last-month">Last Month</option>
+                <option value="this-quarter">This Quarter</option>
+                <option value="this-year">This Year</option>
+              </select>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 ml-4 shrink-0">
-            <button className="relative p-1.5 text-[#555] hover:text-[#222] hover:bg-[#f4f5f8] rounded transition-colors">
-              <Bell className="w-[18px] h-[18px]" />
-              <span className="absolute top-1 right-1 w-[7px] h-[7px] bg-[#f0483e] rounded-full border-2 border-white"></span>
-            </button>
+          {/* --- Stats Grid (4 columns to fit fully visible text) --- */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+            {dashboardStats.map((stat, i) => (
+              <div key={i} className="bg-white p-5 rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col justify-between group">
+                <div className="flex items-center gap-3 mb-4">
+                  <stat.icon className={`w-[20px] h-[20px] ${stat.iconColor}`} />
+                  <h3 className="text-[13px] font-semibold text-[#555] uppercase tracking-wide">
+                    {stat.title}
+                  </h3>
+                </div>
+                <h2 className="text-[24px] font-bold text-[#111] tabular-nums">
+                  {stat.amount || "₹0.00"}
+                </h2>
+              </div>
+            ))}
+          </div>
+
+          {/* --- Row 1: Cash Flow Prediction & Profit & Loss --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             
-            <div className="flex items-center gap-2.5 pl-3 border-l border-[#e4e5e7] cursor-pointer group relative shrink-0">
-               <div className="w-7 h-7 rounded-full bg-[#f2f8ff] border border-[#cce3ff] flex items-center justify-center text-[#006aff] font-bold text-[12px] shrink-0">
-                  {loading ? "-" : profileInitial}
-               </div>
-               <div className="hidden md:flex flex-col min-w-0">
-                  <span className="text-[13px] font-semibold text-[#222] leading-none truncate max-w-[120px]">{loading ? "Loading..." : profileName}</span>
-               </div>
-               <ChevronDown className="hidden md:block w-4 h-4 text-[#999] shrink-0" />
-               
-               {/* Dropdown Menu */}
-               <div className="absolute right-0 top-[120%] w-[250px] bg-white rounded-md shadow-[0_4px_15px_rgba(0,0,0,0.1)] border border-[#e4e5e7] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform origin-top-right">
-                  <div className="p-3 border-b border-[#eee]">
-                     <p className="text-[13px] font-bold text-[#222] truncate">{profileName}</p>
-                     <p className="text-[11px] text-[#777] mt-0.5 truncate">{user?.email}</p>
-                     <div className="flex flex-wrap gap-1.5 mt-2">
-                       <div className="inline-block px-2 py-0.5 bg-[#e8f2ff] text-[#006aff] text-[10px] font-bold uppercase rounded-sm border border-[#cce3ff]">
-                         {selectedPlanLabel} Plan
-                       </div>
-                       <div className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded-sm border ${
-                         user?.role === "instore" 
-                           ? "bg-[#fff8e1] text-[#f57c00] border-[#f57c00]/30" 
-                           : "bg-[#e6f8ef] text-[#00b365] border-[#00b365]/30"
-                       }`}>
-                         {user?.role === "instore" ? "In-Store POS" : "Admin Portal"}
-                       </div>
-                     </div>
+            {/* Cash Flow Prediction (Spans 2 columns) */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm lg:col-span-2 flex flex-col min-w-0 relative overflow-hidden">
+              <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
+                <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
+                  <Activity className="w-[18px] h-[18px] text-[#006aff]" /> 
+                  Cash Flow Prediction
+                </h3>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] bg-[#e8f2ff] text-[#006aff] font-bold px-3 py-1.5 rounded-full uppercase tracking-widest border border-[#cce3ff] flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" /> AI Forecast Active
+                  </span>
+                  <button onClick={() => handleDownload("Cash Flow Prediction")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="p-6 flex-1 w-full flex flex-col justify-center">
+                {!cashFlowBars ? (
+                  <div className="flex-1 flex items-center justify-center text-[#999] text-[14px] font-medium py-16">
+                    No cash flow data available to predict
                   </div>
-                  <div className="py-1">
-                    <button onClick={() => navigate("/profile")} className="w-full text-left px-4 py-2 text-[13px] text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff] flex items-center gap-2 transition-colors">
-                      <Settings className="w-[14px] h-[14px]" /> Account Settings
-                    </button>
-                    <button onClick={handleSignOut} className="w-full text-left px-4 py-2 text-[13px] text-[#f0483e] hover:bg-[#fde9e8] flex items-center gap-2 transition-colors">
-                      <LogOut className="w-[14px] h-[14px]" /> Sign Out
-                    </button>
-                  </div>
-               </div>
+                ) : (
+                  <>
+                    <div className="relative flex-1 flex min-h-[200px]">
+                      <div className="flex flex-col justify-between text-[12px] text-[#777] font-medium py-1 w-12 shrink-0">
+                        <span>{formatYAxis(cashFlowMax)}</span>
+                        <span>{formatYAxis(cashFlowMax * 0.75)}</span>
+                        <span>{formatYAxis(cashFlowMax * 0.5)}</span>
+                        <span>{formatYAxis(cashFlowMax * 0.25)}</span>
+                        <span>0</span>
+                      </div>
+                      <div className="flex-1 relative border-b border-[#eee]">
+                        <div className="absolute inset-0 flex flex-col justify-between py-1">
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-transparent"></div>
+                        </div>
+                        <div className="absolute inset-0 flex items-end justify-between px-4 pt-1">
+                          {cashFlowBars.map((bar, i) => (
+                            <div key={i} className="flex gap-1.5 w-[8%] h-full items-end pb-[1px] relative z-10">
+                              <div className="bg-[#00b365] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.inflowHeight }} title={`Inflow: ₹${bar.inflowVal}`}></div>
+                              <div className="bg-[#f0483e] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.outflowHeight }} title={`Outflow: ₹${bar.outflowVal}`}></div>
+                            </div>
+                          ))}
+                          {/* AI Prediction Dummy Bar */}
+                          <div className="flex gap-1.5 w-[8%] h-full items-end pb-[1px] relative z-10 opacity-60">
+                              <div className="bg-[#00b365] w-full rounded-t-sm border border-dashed border-[#00b365] bg-opacity-40" style={{ height: "70%" }} title="Predicted Inflow"></div>
+                              <div className="bg-[#f0483e] w-full rounded-t-sm border border-dashed border-[#f0483e] bg-opacity-40" style={{ height: "40%" }} title="Predicted Outflow"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-[#777] font-semibold uppercase tracking-wider pl-12 pt-4 mb-5">
+                      {cashFlowXLabels.map((lbl, idx) => (
+                        <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
+                      ))}
+                      <span className="text-[#006aff]">Next Mo (Est)</span>
+                    </div>
+                    <div className="flex justify-center gap-6 text-[12px] text-[#555] font-semibold">
+                      <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-[#00b365]"></span> Actual Inflow</div>
+                      <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-[#f0483e]"></span> Actual Outflow</div>
+                      <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm border border-dashed border-[#00b365] bg-transparent"></span> Predicted</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Profit & Loss Summary (Spans 1 column) */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col lg:col-span-1 min-w-0">
+              <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                <h3 className="text-[15px] font-bold text-[#222]">Profit and Loss</h3>
+                <button onClick={() => handleDownload("Profit and Loss")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                  <Download className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-6 flex-1 flex flex-col justify-center">
+                <div className="flex justify-between items-center py-3 border-b border-[#f4f5f8]">
+                  <span className="text-[14px] text-[#555]">Total Income</span>
+                  <span className="text-[15px] font-semibold text-[#222] tabular-nums">
+                    {plSummaryData.totalRevenue > 0 ? `₹${plSummaryData.totalRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-3 border-b border-[#f4f5f8]">
+                  <span className="text-[14px] text-[#555]">Total Expenses</span>
+                  <span className="text-[15px] font-semibold text-[#222] tabular-nums">
+                    {plSummaryData.totalExpenses > 0 ? `₹${plSummaryData.totalExpenses.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-5 my-2">
+                  <span className="text-[16px] font-bold text-[#222]">Net Profit</span>
+                  <span className={`text-[22px] font-bold tabular-nums ${plSummaryData.netProfit >= 0 ? "text-[#00b365]" : "text-[#f0483e]"}`}>
+                    {plSummaryData.netProfit < 0 ? "-" : ""}₹{Math.abs(plSummaryData.netProfit).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-3 border-t border-[#f4f5f8]">
+                  <span className="text-[14px] text-[#555]">Gross Margin</span>
+                  <span className="text-[15px] font-semibold text-[#222] tabular-nums">
+                    {plSummaryData.totalRevenue > 0 ? `${plSummaryData.grossProfitMargin.toFixed(2)}%` : "0.00%"}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-        </header>
 
-        {/* Scrollable Dashboard Analytics Area */}
-        <ScrollArea className="flex-1">
-          <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
+          {/* --- Row 2: Recent Invoices & Cash Flow Statement --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             
-            {/* Page Title & Period Selector */}
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
-              <div>
-                <h1 className="text-[22px] font-bold text-[#111] tracking-tight truncate">Dashboard</h1>
-                <p className="text-[13px] text-[#666] mt-0.5 truncate">Overview of your business financials.</p>
+            {/* Recent Invoices Table (Spans 2 columns) */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col overflow-hidden lg:col-span-2 min-w-0">
+              <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
+                <h3 className="text-[15px] font-bold text-[#222]">Recent Invoices</h3>
+                <button onClick={() => handleDownload("Recent Invoices")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                  <Download className="w-4 h-4" />
+                </button>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[12px] font-semibold text-[#555] uppercase tracking-wide">Period:</span>
-                <select
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="w-full sm:w-[150px] text-[13px] font-semibold px-3 py-1.5 border border-[#ccc] rounded-sm text-[#222] bg-white hover:border-[#aaa] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] transition-all outline-none cursor-pointer h-8"
-                >
-                  <option value="this-month">This Month</option>
-                  <option value="last-month">Last Month</option>
-                  <option value="this-quarter">This Quarter</option>
-                  <option value="this-year">This Year</option>
-                </select>
-              </div>
-            </div>
-
-            {/* --- Stats Grid --- */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-              {dashboardStats.map((stat, i) => (
-                <div key={i} className="bg-white p-4 rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col justify-between group">
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <stat.icon className={`w-[18px] h-[18px] ${stat.iconColor}`} />
-                    <h3 className="text-[12px] font-semibold text-[#555] uppercase tracking-wide truncate">
-                      {stat.title}
-                    </h3>
-                  </div>
-                  <h2 className="text-[20px] font-bold text-[#111] tabular-nums truncate">
-                    {stat.amount || "₹0.00"}
-                  </h2>
-                </div>
-              ))}
-            </div>
-
-            {/* --- Charts Row 1 --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 mb-6">
-              
-              {/* Revenue Line Chart */}
-              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
-                <div className="px-5 py-3.5 border-b border-[#e4e5e7] flex justify-between items-center">
-                  <h3 className="text-[14px] font-semibold text-[#222]">Income and Expense</h3>
-                  <button className="text-[12px] text-[#006aff] font-medium hover:underline">View Report</button>
-                </div>
-                <div className="p-5 flex-1 w-full flex flex-col justify-center">
-                  {!revenueLinePath ? (
-                    <div className="flex-1 flex items-center justify-center text-[#999] text-[13px] font-medium py-12">
-                      No data available for this period
-                    </div>
-                  ) : (
-                    <>
-                      <div className="relative flex-1 flex min-h-[160px]">
-                        <div className="flex flex-col justify-between text-[11px] text-[#777] font-medium py-1 w-9 shrink-0">
-                          <span>{formatYAxis(revenueMax)}</span>
-                          <span>{formatYAxis(revenueMax * 0.75)}</span>
-                          <span>{formatYAxis(revenueMax * 0.5)}</span>
-                          <span>{formatYAxis(revenueMax * 0.25)}</span>
-                          <span>0</span>
-                        </div>
-                        <div className="flex-1 relative border-b border-[#eee]">
-                          <div className="absolute inset-0 flex flex-col justify-between py-1">
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-transparent"></div>
-                          </div>
-                          <svg className="absolute inset-0 w-full h-full pb-1" preserveAspectRatio="none" viewBox="0 0 100 100">
-                            <path d={revenueLinePath} fill="none" stroke="#006aff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-[10px] text-[#777] font-semibold uppercase tracking-wider pl-9 pt-3">
-                        {revenueXLabels.map((lbl, idx) => (
-                          <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Cash Flow Overview */}
-              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
-                <div className="px-5 py-3.5 border-b border-[#e4e5e7]">
-                  <h3 className="text-[14px] font-semibold text-[#222]">Cash Flow</h3>
-                </div>
-                <div className="p-5 flex-1 w-full flex flex-col justify-center">
-                  {!cashFlowBars ? (
-                    <div className="flex-1 flex items-center justify-center text-[#999] text-[13px] font-medium py-12">
-                      No cash flow data
-                    </div>
-                  ) : (
-                    <>
-                      <div className="relative flex-1 flex min-h-[160px]">
-                        <div className="flex flex-col justify-between text-[11px] text-[#777] font-medium py-1 w-9 shrink-0">
-                          <span>{formatYAxis(cashFlowMax)}</span>
-                          <span>{formatYAxis(cashFlowMax * 0.75)}</span>
-                          <span>{formatYAxis(cashFlowMax * 0.5)}</span>
-                          <span>{formatYAxis(cashFlowMax * 0.25)}</span>
-                          <span>0</span>
-                        </div>
-                        <div className="flex-1 relative border-b border-[#eee]">
-                          <div className="absolute inset-0 flex flex-col justify-between py-1">
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-transparent"></div>
-                          </div>
-                          <div className="absolute inset-0 flex items-end justify-between px-3 pt-1">
-                            {cashFlowBars.map((bar, i) => (
-                              <div key={i} className="flex gap-1 w-[8%] h-full items-end pb-[1px] relative z-10">
-                                <div className="bg-[#00b365] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.inflowHeight }} title={`Inflow: ₹${bar.inflowVal}`}></div>
-                                <div className="bg-[#f0483e] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.outflowHeight }} title={`Outflow: ₹${bar.outflowVal}`}></div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-[10px] text-[#777] font-semibold uppercase tracking-wider pl-9 pt-3 mb-4">
-                        {cashFlowXLabels.map((lbl, idx) => (
-                          <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
-                        ))}
-                      </div>
-                      <div className="flex justify-center gap-5 text-[11px] text-[#555] font-semibold">
-                        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#00b365]"></span> Cash Inflow</div>
-                        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#f0483e]"></span> Cash Outflow</div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Profit & Loss Summary */}
-              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col lg:col-span-2 xl:col-span-1 min-w-0">
-                <div className="px-5 py-3.5 border-b border-[#e4e5e7]">
-                  <h3 className="text-[14px] font-semibold text-[#222]">Profit and Loss</h3>
-                </div>
-                <div className="p-5 flex-1 flex flex-col justify-center">
-                  <div className="flex justify-between items-center py-2.5 border-b border-[#f4f5f8]">
-                    <span className="text-[13px] text-[#555]">Total Income</span>
-                    <span className="text-[14px] font-semibold text-[#222] tabular-nums">
-                      {plSummaryData.totalRevenue > 0 ? `₹${plSummaryData.totalRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2.5 border-b border-[#f4f5f8]">
-                    <span className="text-[13px] text-[#555]">Total Expenses</span>
-                    <span className="text-[14px] font-semibold text-[#222] tabular-nums">
-                      {plSummaryData.totalExpenses > 0 ? `₹${plSummaryData.totalExpenses.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-4 my-2">
-                    <span className="text-[14px] font-bold text-[#222]">Net Profit</span>
-                    <span className={`text-[18px] font-bold tabular-nums ${plSummaryData.netProfit >= 0 ? "text-[#00b365]" : "text-[#f0483e]"}`}>
-                      {plSummaryData.netProfit < 0 ? "-" : ""}₹{Math.abs(plSummaryData.netProfit).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2.5 border-t border-[#f4f5f8]">
-                    <span className="text-[13px] text-[#555]">Gross Margin</span>
-                    <span className="text-[13px] font-semibold text-[#222] tabular-nums">
-                      {plSummaryData.totalRevenue > 0 ? `${plSummaryData.grossProfitMargin.toFixed(2)}%` : "0.00%"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* --- Charts Row 2 --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
-              
-              {/* Recent Invoices Table */}
-              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col overflow-hidden lg:col-span-2 xl:col-span-3 min-w-0">
-                <div className="px-5 py-3.5 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
-                  <h3 className="text-[14px] font-semibold text-[#222]">Recent Invoices</h3>
-                  <button className="w-[24px] h-[24px] bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors"><Plus className="w-4 h-4" /></button>
-                </div>
-                <div className="flex-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                  <table className="w-full text-left border-collapse min-w-[450px]">
-                    <thead>
-                      <tr className="border-b border-[#e4e5e7] bg-white">
-                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide whitespace-nowrap w-32">Date</th>
-                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide whitespace-nowrap">Invoice#</th>
-                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide whitespace-nowrap">Customer Name</th>
-                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide text-right whitespace-nowrap">Status</th>
-                        <th className="py-2.5 px-5 font-semibold text-[#777] text-[11px] uppercase tracking-wide text-right whitespace-nowrap">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoicesList.length > 0 ? (
-                        invoicesList.map((inv, i) => (
-                          <tr key={i} className="border-b border-[#f4f5f8] last:border-0 hover:bg-[#f9fafd] transition-colors cursor-pointer">
-                            <td className="py-3 px-5 text-[13px] text-[#555] whitespace-nowrap">12 Aug 2026</td>
-                            <td className="py-3 px-5 text-[13px] text-[#006aff] font-medium whitespace-nowrap">{inv.id}</td>
-                            <td className="py-3 px-5 text-[13px] text-[#333] font-medium truncate max-w-[180px]">{inv.company}</td>
-                            <td className="py-3 px-5 text-right whitespace-nowrap">
-                              <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-wider ${inv.statusColor}`}>
-                                {inv.status}
-                              </span>
-                            </td>
-                            <td className="py-3 px-5 text-[13px] font-semibold text-[#222] text-right tabular-nums whitespace-nowrap">{inv.amount}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={5} className="py-8 text-center text-[#999] text-[13px]">
-                            No recent invoices found.
+              <div className="flex-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+                <table className="w-full text-left border-collapse min-w-[500px]">
+                  <thead>
+                    <tr className="border-b border-[#e4e5e7] bg-white">
+                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap w-36">Date</th>
+                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap">Invoice#</th>
+                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap">Customer Name</th>
+                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide text-right whitespace-nowrap">Status</th>
+                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide text-right whitespace-nowrap">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoicesList.length > 0 ? (
+                      invoicesList.map((inv, i) => (
+                        <tr key={i} className="border-b border-[#f4f5f8] last:border-0 hover:bg-[#f9fafd] transition-colors cursor-pointer">
+                          <td className="py-4 px-6 text-[14px] text-[#555] whitespace-nowrap">12 Aug 2026</td>
+                          <td className="py-4 px-6 text-[14px] text-[#006aff] font-medium whitespace-nowrap">{inv.id}</td>
+                          <td className="py-4 px-6 text-[14px] text-[#333] font-medium truncate max-w-[200px]">{inv.company}</td>
+                          <td className="py-4 px-6 text-right whitespace-nowrap">
+                            <span className={`px-2.5 py-1 rounded-[4px] text-[11px] font-bold uppercase tracking-wider ${inv.statusColor}`}>
+                              {inv.status}
+                            </span>
                           </td>
+                          <td className="py-4 px-6 text-[14px] font-bold text-[#222] text-right tabular-nums whitespace-nowrap">{inv.amount}</td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="py-10 text-center text-[#999] text-[14px]">
+                          No recent invoices found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-
-              {/* Module records */}
-              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm lg:col-span-1 flex flex-col min-w-0">
-                 <div className="px-5 py-3.5 border-b border-[#e4e5e7] bg-[#f9fafd]">
-                    <h3 className="text-[14px] font-semibold text-[#222]">Records Summary</h3>
-                 </div>
-                 <div className="flex-1 overflow-y-auto divide-y divide-[#f4f5f8]">
-                    {moduleRecordCounts.map((module) => (
-                      <div key={module.label} className="flex w-full items-center justify-between px-5 py-3 text-left hover:bg-[#f9fafd] transition-colors cursor-pointer">
-                        <p className="truncate text-[13px] font-medium text-[#444]">{module.label}</p>
-                        <span className="text-[13px] font-semibold text-[#222] tabular-nums">{module.count}</span>
-                      </div>
-                    ))}
-                 </div>
-              </div>
-
             </div>
 
-            {/* --- Charts Row 3: Financial Ratios --- */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm mb-6 flex flex-col min-w-0">
-              <div className="px-5 py-3.5 border-b border-[#e4e5e7] bg-[#f9fafd]">
-                <h3 className="text-[14px] font-semibold text-[#222]">Financial Ratios</h3>
+            {/* Cash Flow Statement (Spans 1 column) */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm lg:col-span-1 flex flex-col min-w-0">
+               <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                  <h3 className="text-[15px] font-bold text-[#222]">Cash Flow Statement</h3>
+                  <button onClick={() => handleDownload("Cash Flow Statement")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                    <Download className="w-4 h-4" />
+                  </button>
+               </div>
+               <div className="p-6 flex-1 flex flex-col justify-center gap-5">
+                  <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
+                     <span className="text-[14px] text-[#555]">Operating Activities</span>
+                     <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.8)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
+                     <span className="text-[14px] text-[#555]">Investing Activities</span>
+                     <span className="text-[15px] font-semibold text-[#f0483e]">{formatCurrency(cfsOutflow * 0.3)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
+                     <span className="text-[14px] text-[#555]">Financing Activities</span>
+                     <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-3">
+                     <span className="text-[16px] font-bold text-[#222]">Net Cash Flow</span>
+                     <span className={`text-[18px] font-bold tabular-nums ${cfsNetFlow >= 0 ? "text-[#006aff]" : "text-[#f0483e]"}`}>
+                       {formatCurrency(cfsNetFlow)}
+                     </span>
+                  </div>
+               </div>
+            </div>
+
+          </div>
+
+          {/* --- Row 3: Financial Ratios & Income / Expense --- */}
+          <div className="flex flex-col gap-6 mb-8">
+            
+            {/* Financial Ratios block */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
+              <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                <h3 className="text-[15px] font-bold text-[#222]">Financial Ratios</h3>
+                <button onClick={() => handleDownload("Financial Ratios")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                  <Download className="w-4 h-4" />
+                </button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-[#e4e5e7]">
                 {financialRatios.length > 0 ? (
                   financialRatios.map((ratio, idx) => (
-                     <div key={idx} className="p-4 sm:p-5 flex flex-col items-center justify-center text-center hover:bg-[#f9fafd] transition-colors cursor-default">
-                       <span className="text-[12px] font-semibold text-[#555] mb-1.5">{ratio.label}</span>
-                       <span className="text-[18px] font-bold text-[#111] tabular-nums mb-2">{ratio.value}</span>
-                       <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-[3px] ${
-                         ratio.status === "Good" ? "bg-[#e6f8ef] text-[#00b365] border border-[#00b365]/30" : "bg-[#fde9e8] text-[#f0483e] border border-[#f0483e]/30"
-                       }`}>
-                         {ratio.status}
-                       </span>
-                     </div>
+                      <div key={idx} className="p-5 flex flex-col items-center justify-center text-center hover:bg-[#f9fafd] transition-colors cursor-default">
+                        <span className="text-[13px] font-semibold text-[#555] mb-2">{ratio.label}</span>
+                        <span className="text-[22px] font-bold text-[#111] tabular-nums mb-3">{ratio.value}</span>
+                        <span className={`text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-[4px] ${
+                          ratio.status === "Good" ? "bg-[#e6f8ef] text-[#00b365] border border-[#00b365]/30" : "bg-[#fde9e8] text-[#f0483e] border border-[#f0483e]/30"
+                        }`}>
+                          {ratio.status}
+                        </span>
+                      </div>
                   ))
                 ) : (
-                  <div className="col-span-full py-8 text-center text-[#999] text-[13px]">
+                  <div className="col-span-full py-10 text-center text-[#999] text-[14px]">
                     No financial ratios calculated yet.
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Footer */}
-            <footer className="py-6 text-[12px] text-[#777] flex flex-col md:flex-row items-center justify-between border-t border-[#e4e5e7] mt-8">
-              <p>© 2026 SHREE ANDAL AI Software Solutions. All rights reserved.</p>
-              <div className="flex gap-4 mt-2 md:mt-0">
-                <a href="#" className="hover:text-[#006aff]">Help</a>
-                <a href="#" className="hover:text-[#006aff]">Privacy</a>
-                <a href="#" className="hover:text-[#006aff]">Terms</a>
+            {/* Income & Expense block (Full Width SVG line chart) */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
+              <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
+                <h3 className="text-[15px] font-bold text-[#222]">Income and Expense</h3>
+                <button onClick={() => handleDownload("Income and Expense")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                  <Download className="w-4 h-4" />
+                </button>
               </div>
-            </footer>
+              <div className="p-6 flex-1 w-full flex flex-col justify-center">
+                {!revenueLinePath ? (
+                  <div className="flex-1 flex items-center justify-center text-[#999] text-[14px] font-medium py-16">
+                    No data available for this period
+                  </div>
+                ) : (
+                  <>
+                    <div className="relative flex-1 flex min-h-[220px]">
+                      <div className="flex flex-col justify-between text-[12px] text-[#777] font-medium py-1 w-12 shrink-0">
+                        <span>{formatYAxis(revenueMax)}</span>
+                        <span>{formatYAxis(revenueMax * 0.75)}</span>
+                        <span>{formatYAxis(revenueMax * 0.5)}</span>
+                        <span>{formatYAxis(revenueMax * 0.25)}</span>
+                        <span>0</span>
+                      </div>
+                      <div className="flex-1 relative border-b border-[#eee]">
+                        <div className="absolute inset-0 flex flex-col justify-between py-1">
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-[#f4f5f8]"></div>
+                          <div className="h-px w-full bg-transparent"></div>
+                        </div>
+                        <svg className="absolute inset-0 w-full h-full pb-1" preserveAspectRatio="none" viewBox="0 0 100 100">
+                          <path d={revenueLinePath} fill="none" stroke="#006aff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-[#777] font-semibold uppercase tracking-wider pl-12 pt-4">
+                      {revenueXLabels.map((lbl, idx) => (
+                        <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
 
           </div>
-        </ScrollArea>
+
+          {/* --- Row 4: Balance Sheet & Tax / GST Analysis --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            
+            {/* Balance Sheet */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
+               <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                  <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
+                     <Landmark className="w-4 h-4 text-[#555]" /> Balance Sheet Overview
+                  </h3>
+                  <button onClick={() => handleDownload("Balance Sheet Overview")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                    <Download className="w-4 h-4" />
+                  </button>
+               </div>
+               <div className="p-6 flex-1 flex flex-col gap-4">
+                  <div className="flex justify-between items-center p-4 bg-[#f9fafd] rounded border border-[#e4e5e7]">
+                     <span className="text-[14px] font-semibold text-[#555]">Total Assets</span>
+                     <span className="text-[16px] font-bold text-[#222] tabular-nums">{formatCurrency(bsSummary.assets)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-4 bg-[#f9fafd] rounded border border-[#e4e5e7]">
+                     <span className="text-[14px] font-semibold text-[#555]">Total Liabilities</span>
+                     <span className="text-[16px] font-bold text-[#222] tabular-nums">{formatCurrency(bsSummary.liabilities)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-5 mt-3 bg-[#e8f2ff] rounded border border-[#cce3ff]">
+                     <span className="text-[16px] font-bold text-[#006aff]">Total Equity</span>
+                     <span className="text-[20px] font-bold text-[#006aff] tabular-nums">{formatCurrency(bsSummary.equity)}</span>
+                  </div>
+               </div>
+            </div>
+
+            {/* Tax & GST Analysis */}
+            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
+               <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                  <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
+                    <PieChart className="w-4 h-4 text-[#555]" /> Tax & GST Analysis
+                  </h3>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] bg-[#e6f8ef] text-[#00b365] px-2.5 py-1 rounded uppercase font-bold tracking-wide border border-[#00b365]/30">Compliant</span>
+                    <button onClick={() => handleDownload("Tax and GST Analysis")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
+               </div>
+               <div className="p-6 flex-1 flex flex-col gap-5">
+                  <div className="flex gap-4">
+                     <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
+                        <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Output GST</p>
+                        <p className="text-[20px] font-bold text-[#222] tabular-nums">
+                          {formatCurrency(plSummaryData.totalRevenue * 0.18)}
+                        </p>
+                     </div>
+                     <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
+                        <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Input ITC</p>
+                        <p className="text-[20px] font-bold text-[#00b365] tabular-nums">
+                          {formatCurrency(plSummaryData.totalExpenses * 0.18)}
+                        </p>
+                     </div>
+                  </div>
+                  <div className="flex justify-between items-center p-5 mt-2 bg-[#fdf2f2] rounded border border-[#fbd4d4]">
+                     <span className="text-[16px] font-bold text-[#f0483e]">Net GST Payable</span>
+                     <span className="text-[20px] font-bold text-[#f0483e] tabular-nums">
+                       {formatCurrency(Math.max(0, (plSummaryData.totalRevenue * 0.18) - (plSummaryData.totalExpenses * 0.18)))}
+                     </span>
+                  </div>
+               </div>
+            </div>
+
+          </div>
+
+          {/* Footer */}
+          <footer className="py-8 text-[13px] text-[#777] flex flex-col md:flex-row items-center justify-between border-t border-[#e4e5e7] mt-10">
+            <p>©️ 2026 SHREE ANDAL AI Software Solutions. All rights reserved.</p>
+            <div className="flex gap-6 mt-4 md:mt-0">
+              <a href="#" className="hover:text-[#006aff] transition-colors">Help</a>
+              <a href="#" className="hover:text-[#006aff] transition-colors">Privacy</a>
+              <a href="#" className="hover:text-[#006aff] transition-colors">Terms</a>
+            </div>
+          </footer>
+
+        </div>
 
         {/* --- Floating AI Chat Button --- */}
-        <div className="fixed bottom-6 right-6 z-40">
+        <div className="fixed bottom-8 right-8 z-40">
           <button 
             onClick={() => setIsAiChatOpen(true)}
             className="w-14 h-14 bg-[#006aff] rounded-full shadow-[0_4px_15px_rgba(0,106,255,0.4)] hover:-translate-y-0.5 active:scale-95 transition-all duration-200 flex items-center justify-center relative border-2 border-white"
