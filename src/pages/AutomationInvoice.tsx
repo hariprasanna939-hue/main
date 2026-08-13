@@ -405,8 +405,19 @@ const AutomationInvoice = () => {
     const loadInvoices = async () => {
       let mergedInvoices: InvoiceData[] = [];
 
-      // Load from localStorage
-      const saved = localStorage.getItem('savedInvoices');
+      // Get authenticated user ID for scoped localStorage
+      const currentUser = localStorage.getItem("user");
+      let userId = "guest";
+      if (currentUser) {
+        try {
+          const userObj = JSON.parse(currentUser);
+          userId = userObj.id || userObj._id || "guest";
+        } catch (e) {}
+      }
+      const storageKey = `savedInvoices_${userId}`;
+
+      // Load from localStorage (user-scoped)
+      const saved = localStorage.getItem(storageKey);
       if (saved) {
         try {
           mergedInvoices = JSON.parse(saved);
@@ -417,7 +428,13 @@ const AutomationInvoice = () => {
 
       // Load from backend
       try {
-        const response = await fetch(`${API_BASE_URL}/invoice/all?limit=100`);
+        const token = localStorage.getItem("token");
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(`${API_BASE_URL}/invoice/all?limit=100`, { headers });
         if (response.ok) {
           const data = await response.json();
           if (data.invoices && Array.isArray(data.invoices)) {
@@ -925,17 +942,50 @@ const AutomationInvoice = () => {
 
       let backendId = '';
       try {
-        const response = await fetch(`${API_ENDPOINTS.INVOICE}/create`, {
+        const token = localStorage.getItem("token");
+        const isPurchase = currentInvoice.type === 'purchase';
+        const url = isPurchase 
+          ? `${API_BASE_URL}/purchase-invoice/create`
+          : `${API_ENDPOINTS.INVOICE}/create`;
+
+        const bodyData = isPurchase
+          ? {
+              supplierName: currentInvoice.partyName,
+              billNo: currentInvoice.invoiceNo,
+              billDate: currentInvoice.invoiceDate,
+              paymentMethod: currentInvoice.saleType === 'cash' ? 'Cash' : 'Credit',
+              stateOfSupply: currentInvoice.stateOfSupply || 'Tamil Nadu',
+              items: currentInvoice.items.map(item => ({
+                itemName: item.itemName,
+                itemCode: item.itemCode,
+                quantity: item.quantity,
+                pricePerUnit: item.pricePerUnit,
+                amount: item.amount,
+                taxPercent: item.taxPercent,
+                discountPercent: item.discountPercent
+              })),
+              subtotal: currentInvoice.subtotal,
+              totalTax: currentInvoice.totalTax,
+              total: currentInvoice.total,
+              paid: currentInvoice.paid,
+              balance: currentInvoice.balance
+            }
+          : backendData;
+
+        const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(backendData)
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(bodyData)
         });
         const result = await response.json();
         if (response.ok) {
           backendId = result.invoiceId || result.invoice?._id;
           setLastSavedId(backendId);
         } else {
-          toast.error(result.message || "Failed to save invoice to server. Try changing the invoice number.");
+          toast.error(result.message || `Failed to save ${isPurchase ? 'purchase bill' : 'invoice'} to server.`);
           setIsSaving(false);
           return;
         }

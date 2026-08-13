@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VoiceButton } from "@/components/ui/VoiceButton";
-import { ArrowLeft, Download, Calculator, Sparkles, Receipt, Shield, TrendingUp, Search, Database, FileText } from "lucide-react";
+import { ArrowLeft, Download, Calculator, Sparkles, Receipt, Shield, TrendingUp, Search, Database, FileText, BarChart2, PieChart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -42,8 +42,12 @@ const TaxGST = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState("calculator");
+  const [activeTab, setActiveTab] = useState("analytics");
   const [companyName, setCompanyName] = useState(DEFAULT_REPORT_COMPANY_NAME);
+
+  // GST Analytics State
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("this-month");
+  const [gstAnalytics, setGstAnalytics] = useState<any>(null);
 
   // Calculator State
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -58,6 +62,25 @@ const TaxGST = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [returns, setReturns] = useState<TaxReturn[]>([]);
   const [filteredReturns, setFilteredReturns] = useState<TaxReturn[]>([]);
+
+  // Fetch GST analytics from backend
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${API_ENDPOINTS.TAX}/analytics?period=${analyticsPeriod}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGstAnalytics(data);
+        }
+      } catch (err) {
+        console.error("Error fetching GST analytics:", err);
+      }
+    };
+    fetchAnalytics();
+  }, [analyticsPeriod]);
 
   // Generate next sequential GST invoice number
   const generateGSTInvoiceNo = (currentReturns: TaxReturn[]) => {
@@ -85,7 +108,10 @@ const TaxGST = () => {
   useEffect(() => {
     const fetchReturns = async () => {
       try {
-        const response = await fetch(`${API_ENDPOINTS.TAX}/all`);
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${API_ENDPOINTS.TAX}/all`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
         const data = await response.json();
         setReturns(data);
         setFilteredReturns(data);
@@ -437,7 +463,14 @@ const TaxGST = () => {
         </Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
-          <TabsList className="grid w-full grid-cols-2 rounded-[24px] border border-white/55 bg-white/42 p-1 shadow-[0_16px_42px_rgba(15,23,42,0.08)] backdrop-blur-2xl">
+          <TabsList className="grid w-full grid-cols-3 rounded-[24px] border border-white/55 bg-white/42 p-1 shadow-[0_16px_42px_rgba(15,23,42,0.08)] backdrop-blur-2xl">
+            <TabsTrigger
+              value="analytics"
+              className="flex items-center gap-2 rounded-[18px] text-slate-600 data-[state=active]:bg-slate-950 data-[state=active]:text-white transition-all duration-300"
+            >
+              <BarChart2 className="h-4 w-4" />
+              GST Analytics
+            </TabsTrigger>
             <TabsTrigger
               value="calculator"
               className="flex items-center gap-2 rounded-[18px] text-slate-600 data-[state=active]:bg-slate-950 data-[state=active]:text-white transition-all duration-300"
@@ -453,6 +486,150 @@ const TaxGST = () => {
               Tax Returns
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="analytics">
+            <Card className="liquid-panel overflow-hidden rounded-[36px] border-white/55 transition-all duration-500">
+              <CardHeader className="relative">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-2xl font-bold text-slate-950 flex items-center gap-2">
+                      <BarChart2 className="h-6 w-6 text-sky-700" />
+                      Live GST & Tax Summary
+                    </CardTitle>
+                    <CardDescription className="text-slate-600 mt-1">
+                      Automated Output vs Input Tax reconciliation from sales and purchase transactions
+                    </CardDescription>
+                  </div>
+                  <Select value={analyticsPeriod} onValueChange={setAnalyticsPeriod}>
+                    <SelectTrigger className="w-[180px] h-12 rounded-full border-slate-200 bg-white/80 text-slate-900 font-semibold focus:ring-0">
+                      <SelectValue placeholder="Select Period" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-[18px]">
+                      <SelectItem value="this-month">This Month</SelectItem>
+                      <SelectItem value="last-month">Last Month</SelectItem>
+                      <SelectItem value="this-quarter">This Quarter</SelectItem>
+                      <SelectItem value="this-year">This Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-8 p-8">
+                {/* GST SUMMARY CARDS */}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <Receipt className="h-5 w-5 text-sky-700" />
+                    GST Summary
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="p-5 rounded-2xl bg-white/80 border border-slate-200 shadow-sm">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Output GST (Sales)</p>
+                      <p className="text-2xl font-black text-slate-900 mt-2">
+                        ₹{(gstAnalytics?.gstSummary?.outputGst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-white/80 border border-slate-200 shadow-sm">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Input GST (Purchases)</p>
+                      <p className="text-2xl font-black text-slate-900 mt-2">
+                        ₹{(gstAnalytics?.gstSummary?.inputGst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-emerald-50/80 border border-emerald-200 shadow-sm">
+                      <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Net GST Payable</p>
+                      <p className="text-2xl font-black text-emerald-950 mt-2">
+                        ₹{(gstAnalytics?.gstSummary?.gstPayable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-sky-50/80 border border-sky-200 shadow-sm">
+                      <p className="text-xs font-bold text-sky-800 uppercase tracking-wider">Net GST Receivable</p>
+                      <p className="text-2xl font-black text-sky-950 mt-2">
+                        ₹{(gstAnalytics?.gstSummary?.gstReceivable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TAX BREAKDOWN */}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-sky-700" />
+                    Tax Breakdown (CGST / SGST / IGST)
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="p-6 rounded-2xl bg-white/80 border border-slate-200 shadow-sm space-y-3">
+                      <p className="text-base font-bold text-slate-900 flex justify-between border-b pb-2">
+                        <span>CGST</span>
+                        <span className="text-sky-700">₹{(gstAnalytics?.taxBreakdown?.cgst?.net || 0).toFixed(2)} Net</span>
+                      </p>
+                      <div className="flex justify-between text-sm text-slate-600">
+                        <span>Output CGST</span>
+                        <span className="font-semibold text-slate-800">₹{(gstAnalytics?.taxBreakdown?.cgst?.output || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-slate-600">
+                        <span>Input CGST</span>
+                        <span className="font-semibold text-slate-800">₹{(gstAnalytics?.taxBreakdown?.cgst?.input || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-6 rounded-2xl bg-white/80 border border-slate-200 shadow-sm space-y-3">
+                      <p className="text-base font-bold text-slate-900 flex justify-between border-b pb-2">
+                        <span>SGST</span>
+                        <span className="text-sky-700">₹{(gstAnalytics?.taxBreakdown?.sgst?.net || 0).toFixed(2)} Net</span>
+                      </p>
+                      <div className="flex justify-between text-sm text-slate-600">
+                        <span>Output SGST</span>
+                        <span className="font-semibold text-slate-800">₹{(gstAnalytics?.taxBreakdown?.sgst?.output || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-slate-600">
+                        <span>Input SGST</span>
+                        <span className="font-semibold text-slate-800">₹{(gstAnalytics?.taxBreakdown?.sgst?.input || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-6 rounded-2xl bg-white/80 border border-slate-200 shadow-sm space-y-3">
+                      <p className="text-base font-bold text-slate-900 flex justify-between border-b pb-2">
+                        <span>IGST</span>
+                        <span className="text-sky-700">₹{(gstAnalytics?.taxBreakdown?.igst?.net || 0).toFixed(2)} Net</span>
+                      </p>
+                      <div className="flex justify-between text-sm text-slate-600">
+                        <span>Output IGST</span>
+                        <span className="font-semibold text-slate-800">₹{(gstAnalytics?.taxBreakdown?.igst?.output || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-slate-600">
+                        <span>Input IGST</span>
+                        <span className="font-semibold text-slate-800">₹{(gstAnalytics?.taxBreakdown?.igst?.input || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TRANSACTION SUMMARY */}
+                <div className="p-6 rounded-2xl bg-slate-900 text-white shadow-xl space-y-4">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Database className="h-5 w-5 text-sky-400" />
+                    Transaction Base Summary
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">Taxable Sales Subtotal</p>
+                      <p className="text-xl font-bold text-white mt-1">₹{(gstAnalytics?.transactionSummary?.taxableSales || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">Taxable Purchases Subtotal</p>
+                      <p className="text-xl font-bold text-white mt-1">₹{(gstAnalytics?.transactionSummary?.taxablePurchases || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">Total Sales GST</p>
+                      <p className="text-xl font-bold text-emerald-400 mt-1">₹{(gstAnalytics?.transactionSummary?.salesGst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">Total Purchase GST</p>
+                      <p className="text-xl font-bold text-sky-400 mt-1">₹{(gstAnalytics?.transactionSummary?.purchaseGst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="calculator">
             <Card className="liquid-panel overflow-hidden rounded-[36px] border-white/55 transition-all duration-500">

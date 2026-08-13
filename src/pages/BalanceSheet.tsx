@@ -5,7 +5,8 @@ import { API_ENDPOINTS } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Calculator, Download, TrendingUp, AlertCircle, CheckCircle, Building, Scale } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Calculator, Download, TrendingUp, AlertCircle, CheckCircle, Building, Scale, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -77,7 +78,29 @@ const BalanceSheet = () => {
     equityOthers: "",
   });
   const [balanceSheet, setBalanceSheet] = useState(null);
+  const [selectedPeriod, setSelectedPeriod] = useState("this-month");
+  const [liveLoading, setLiveLoading] = useState(false);
 
+  useEffect(() => {
+    const fetchLiveBalanceSheet = async () => {
+      setLiveLoading(true);
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${API_ENDPOINTS.BALANCE}/generate?period=${selectedPeriod}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setBalanceSheet(data);
+        }
+      } catch (err) {
+        console.error("Error fetching live balance sheet:", err);
+      } finally {
+        setLiveLoading(false);
+      }
+    };
+    fetchLiveBalanceSheet();
+  }, [selectedPeriod]);
 
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -380,15 +403,30 @@ const BalanceSheet = () => {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Dashboard
           </Button>
-          <div className="flex items-center gap-4">
-            <div className="liquid-icon flex h-16 w-16 items-center justify-center rounded-[22px]">
-              <Scale className="h-8 w-8 text-slate-900" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="liquid-icon flex h-16 w-16 items-center justify-center rounded-[22px]">
+                <Scale className="h-8 w-8 text-slate-900" />
+              </div>
+              <div>
+                <h1 className="text-4xl font-semibold tracking-tight text-slate-950">
+                  Balance Sheet Analytics
+                </h1>
+                <p className="mt-1 text-slate-600 font-medium">Real-time financial position statement connected to live data</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-4xl font-semibold tracking-tight text-slate-950">
-                Balance Sheet Generator
-              </h1>
-              <p className="mt-1 text-slate-600 font-medium">Create comprehensive financial statements with real-time validation</p>
+            <div className="flex items-center gap-3">
+              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                <SelectTrigger className="w-[180px] h-12 rounded-full border-slate-200 bg-white/80 text-slate-900 font-semibold focus:ring-0">
+                  <SelectValue placeholder="Select Period" />
+                </SelectTrigger>
+                <SelectContent className="rounded-[18px]">
+                  <SelectItem value="this-month">This Month</SelectItem>
+                  <SelectItem value="last-month">Last Month</SelectItem>
+                  <SelectItem value="this-quarter">This Quarter</SelectItem>
+                  <SelectItem value="this-year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>

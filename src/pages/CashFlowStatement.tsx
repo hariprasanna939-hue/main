@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Download, TrendingUp, TrendingDown, FileText, BarChart3, Plus, Trash2, Database, DollarSign, Calculator } from "lucide-react";
+import { ArrowLeft, Download, TrendingUp, TrendingDown, FileText, BarChart3, Plus, Trash2, Database, DollarSign, Calculator, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { API_BASE_URL } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +89,72 @@ const CashFlowStatement = () => {
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     setResult(null);
+  };
+
+  const autoGenerateCashFlow = async () => {
+    if (!formData.period) {
+      toast({
+        variant: "destructive",
+        title: "Missing Period",
+        description: "Please enter a period (e.g. July 2026)",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/cashflow-statement/generate?companyName=${encodeURIComponent(formData.companyName)}&period=${encodeURIComponent(formData.period)}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setResult({
+          totalInflow: data.totalInflow,
+          totalOutflow: data.totalOutflow,
+          netCashFlow: data.netCashFlow,
+          status: data.status
+        });
+        setFormData({
+          companyName: data.companyName,
+          period: data.period,
+          sales: (data.sales || 0).toString(),
+          serviceIncome: (data.serviceIncome || 0).toString(),
+          interestIncome: (data.interestIncome || 0).toString(),
+          otherIncome: (data.otherIncome || 0).toString(),
+          costOfMaterials: (data.costOfMaterials || 0).toString(),
+          salaries: (data.salaries || 0).toString(),
+          rent: (data.rent || 0).toString(),
+          utilities: (data.utilities || 0).toString(),
+          financeCost: (data.financeCost || 0).toString(),
+          depreciation: (data.depreciation || 0).toString(),
+          amortization: (data.amortization || 0).toString(),
+          otherExpenses: (data.otherExpenses || 0).toString(),
+        });
+        toast({
+          title: "Auto-Generation Complete",
+          description: `Net Cash Flow: ₹${data.netCashFlow.toFixed(2)} (${data.status})`,
+        });
+        fetchStatements();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.message || "Failed to generate dynamic cash flow statement",
+        });
+      }
+    } catch (error) {
+      console.error("Error auto-generating cash flow statement:", error);
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: "Failed to connect to the server",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const calculateCashFlow = async () => {
@@ -550,14 +616,22 @@ const CashFlowStatement = () => {
                 ))}
               </div>
 
-              <div className="flex gap-4 pt-4">
+              <div className="flex flex-col md:flex-row gap-4 pt-4">
+                <Button
+                  onClick={autoGenerateCashFlow}
+                  disabled={loading}
+                  className="flex-1 h-14 rounded-full bg-indigo-900 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-indigo-800"
+                >
+                  <Sparkles className="mr-2 h-5 w-5 text-yellow-300" />
+                  {loading ? "Generating..." : "Auto-Generate from Live Data"}
+                </Button>
                 <Button
                   onClick={calculateCashFlow}
                   disabled={loading}
-                  className="w-full h-14 rounded-full bg-slate-950 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800"
+                  className="flex-1 h-14 rounded-full bg-slate-950 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800"
                 >
                   <Calculator className="mr-2 h-5 w-5" />
-                  {loading ? "Calculating & Saving..." : "Calculate Net Cash Flow"}
+                  {loading ? "Calculating & Saving..." : "Calculate (Manual)"}
                 </Button>
               </div>
             </CardContent>

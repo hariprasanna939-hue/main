@@ -282,17 +282,164 @@ router.delete("/delete/:id", verifyToken, async (req, res) => {
   }
 });
 
-// ✅ DELETE route to clear all entries for user (Protected)
-router.delete("/clear", verifyToken, async (req, res) => {
+// ✅ GET route for dynamic Cash Flow Prediction based on real historical transactions & manual entries
+router.get("/predict", verifyToken, async (req, res) => {
   try {
-    await CashFlowEntry.deleteMany({ userId: req.user.id });
-    res.json({ message: "All cash flow entries cleared successfully!" });
-  } catch (error) {
-    console.error("Error clearing cash flow entries:", error);
-    res.status(500).json({ 
-      message: "Error clearing cash flow entries",
-      error: error.message 
+    const userId = req.user.id;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // 1. Fetch manual entries
+    const manualEntries = await CashFlowEntry.find({ userId: userObjectId }).sort({ time: 1 });
+
+    // 2. Fetch live data metrics across historical months (past 6 months)
+    const now = new Date();
+    const monthlyPoints = [];
+
+    // Combine manual entries if available
+    if (manualEntries.length >= 2) {
+      manualEntries.forEach(entry => {
+        monthlyPoints.push({
+          label: `${entry.month} ${entry.year}`,
+          inflow: entry.cashInflow,
+          outflow: entry.cashOutflow,
+          net: entry.netCashFlow,
+          time: entry.time
+        });
+      });
+    } else {
+      // Build monthly points from live Bookkeeping, Invoices, PurchaseInvoices, and Sales collections
+      const BookkeepingEntry = mongoose.model("BookkeepingEntry");
+      const Sale = mongoose.model("Sale");
+      let Invoice = null, PurchaseInvoice = null;
+      try { Invoice = mongoose.model("Invoice"); } catch(e) {}
+      try { PurchaseInvoice = mongoose.model("PurchaseInvoice"); } catch(e) {}
+
+      for (let i = 5; i >= 0; i--) {
+        const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+        const monthLabel = mStart.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+        let monthInflow = 0;
+        let monthOutflow = 0;
+
+        // Bookkeeping
+        if (BookkeepingEntry) {
+          const bkEntries = await BookkeepingEntry.find({
+            userId: userObjectId,
+            date: { $gte: mStart, $lte: mEnd },
+            isAutomated: { $ne: true }
+          });
+          monthInflow += bkEntries.filter(e => e.type === "income" || e.type === "Income").reduce((sum, e) => sum + (e.amount || 0), 0);
+          monthOutflow += bkEntries.filter(e => e.type === "expense" || e.type === "Expense").reduce((sum, e) => sum + (e.amount || 0), 0);
+        }
+
+        // Invoices (paid)
+        if (Invoice) {
+          const invs = await Invoice.find({
+            $or: [{ userId: userObjectId }, { createdBy: userId }],
+            isDeleted: false,
+            invoiceDate: { $gte: mStart, $lte: mEnd }
+          });
+          monthInflow += invs.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0);
+        }
+
+        // Purchase Invoices (paid)
+        if (PurchaseInvoice) {
+          const pinvs = await PurchaseInvoice.find({
+            userId: userObjectId,
+            createdAt: { $gte: mStart, $lte: mEnd }
+          });
+          monthOutflow += pinvs.reduce((sum, inv) => sum + (inv.paid || 0), 0);
+        }
+
+        // Sales
+        if (Sale) {
+          const sales = await Sale.find({
+            userId: userObjectId,
+            saleDate: { $gte: mStart, $lte: mEnd }
+          });
+          monthInflow += sales.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+        }
+
+        if (monthInflow > 0 || monthOutflow > 0) {
+          monthlyPoints.push({
+            label: monthLabel,
+            inflow: monthInflow,
+            outflow: monthOutflow,
+            net: monthInflow - monthOutflow,
+            time: 5 - i
+          });
+        }
+      }
+    }
+
+    if (monthlyPoints.length < 1) {
+      return res.json({
+        hasEnoughData: false,
+        message: "Not enough historical data for reliable prediction",
+        predictions: []
+      });
+    }
+
+    const n = monthlyPoints.length;
+    let slopeInflow = 0, interceptInflow = 0;
+    let slopeOutflow = 0, interceptOutflow = 0;
+
+    if (n === 1) {
+      // Single month baseline: use current month's inflow and outflow as baseline forecast
+      interceptInflow = monthlyPoints[0].inflow;
+      interceptOutflow = monthlyPoints[0].outflow;
+    } else {
+      // Multi-month trend: Perform Linear Regression over historical monthly points
+      const sumX = monthlyPoints.reduce((sum, p) => sum + p.time, 0);
+      const sumYInflow = monthlyPoints.reduce((sum, p) => sum + p.inflow, 0);
+      const sumYOutflow = monthlyPoints.reduce((sum, p) => sum + p.outflow, 0);
+      const sumXYInflow = monthlyPoints.reduce((sum, p) => sum + p.time * p.inflow, 0);
+      const sumXYOutflow = monthlyPoints.reduce((sum, p) => sum + p.time * p.outflow, 0);
+      const sumXX = monthlyPoints.reduce((sum, p) => sum + p.time * p.time, 0);
+
+      const denom = (n * sumXX - sumX * sumX) || 1;
+
+      slopeInflow = (n * sumXYInflow - sumX * sumYInflow) / denom;
+      interceptInflow = (sumYInflow - slopeInflow * sumX) / n;
+
+      slopeOutflow = (n * sumXYOutflow - sumX * sumYOutflow) / denom;
+      interceptOutflow = (sumYOutflow - slopeOutflow * sumX) / n;
+    }
+
+    const futurePredictions = [];
+    const lastTime = monthlyPoints[monthlyPoints.length - 1].time;
+
+    for (let i = 1; i <= 6; i++) {
+      const futureTime = lastTime + i;
+      const predictedInflow = Math.max(0, Math.round(slopeInflow * futureTime + interceptInflow));
+      const predictedOutflow = Math.max(0, Math.round(slopeOutflow * futureTime + interceptOutflow));
+      const predictedNet = predictedInflow - predictedOutflow;
+
+      const futureDate = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const monthName = futureDate.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+      futurePredictions.push({
+        month: `Month +${i} (${monthName})`,
+        predictedInflow,
+        predictedOutflow,
+        predictedNet,
+        time: futureTime
+      });
+    }
+
+    res.json({
+      hasEnoughData: true,
+      method: "Linear Regression over historical transaction data",
+      historicalPoints: monthlyPoints,
+      predictions: futurePredictions,
+      nextMonth: futurePredictions[0],
+      next3Months: futurePredictions.slice(0, 3),
+      next6Months: futurePredictions
     });
+  } catch (error) {
+    console.error("Error in cashflow prediction:", error);
+    res.status(500).json({ message: "Error generating cashflow prediction", error: error.message });
   }
 });
 

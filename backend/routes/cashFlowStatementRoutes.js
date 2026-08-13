@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
+import { resolvePeriod, getFinanceMetrics } from "../utils/financeAggregator.js";
 
 const router = express.Router();
 
@@ -151,6 +152,71 @@ router.get("/all", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("Error fetching cash flow statements:", error);
     res.status(500).json({ message: "Error fetching cash flow statements" });
+  }
+});
+
+// ✅ GET route to dynamically generate Cash Flow Statement based on all modules (cash basis)
+// IMPORTANT: Must be registered BEFORE /:id to avoid Express matching "generate" as an id param
+router.get("/generate", verifyToken, async (req, res) => {
+  try {
+    const { period, startDate: startQuery, endDate: endQuery, companyName } = req.query;
+    let start, end;
+    
+    if (period) {
+      const resolved = resolvePeriod(period);
+      start = resolved.startDate;
+      end = resolved.endDate;
+    } else if (startQuery && endQuery) {
+      start = new Date(startQuery);
+      end = new Date(endQuery);
+    } else {
+      const resolved = resolvePeriod("this-month");
+      start = resolved.startDate;
+      end = resolved.endDate;
+    }
+
+    const metrics = await getFinanceMetrics(req.user.id, start, end);
+
+    let status = "neutral";
+    if (metrics.cashFlow.net > 0) status = "positive";
+    if (metrics.cashFlow.net < 0) status = "negative";
+
+    res.json({
+      companyName: companyName || "Your Company",
+      period: period || `${start.toLocaleDateString('en-US', {month: 'long'})} ${start.getFullYear()}`,
+      // Inflow breakdown
+      sales: metrics.revenue.sales,
+      serviceIncome: 0,
+      interestIncome: 0,
+      otherIncome: metrics.revenue.bookkeepingIncome + metrics.revenue.inventorySales,
+      // Outflow breakdown
+      costOfMaterials: metrics.expense.costOfMaterials + metrics.expense.cogs,
+      salaries: metrics.expense.salaries,
+      rent: metrics.expense.rent,
+      utilities: metrics.expense.utilities,
+      financeCost: metrics.expense.financeCost,
+      depreciation: metrics.expense.depreciation,
+      amortization: metrics.expense.amortization,
+      otherExpenses: metrics.expense.otherExpenses,
+      // Totals (cash basis)
+      totalInflow: metrics.cashFlow.inflow,
+      totalOutflow: metrics.cashFlow.outflow,
+      netCashFlow: metrics.cashFlow.net,
+      status,
+      // Nested cashFlow object for Dashboard KPI compatibility
+      cashFlow: {
+        inflow: metrics.cashFlow.inflow,
+        outflow: metrics.cashFlow.outflow,
+        net: metrics.cashFlow.net,
+        receivables: metrics.cashFlow.receivables,
+        payables: metrics.cashFlow.payables,
+        gstPayable: metrics.cashFlow.gstPayable
+      },
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error generating Cash Flow statement:", error);
+    res.status(500).json({ message: "Error generating Cash Flow statement", error: error.message });
   }
 });
 

@@ -43,6 +43,50 @@ const ProfitLoss = () => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const autoGenerateStatement = async () => {
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_ENDPOINTS.PROFIT_LOSS}/generate?companyName=${encodeURIComponent(formData.companyName)}&financialYear=${encodeURIComponent(formData.financialYear)}&period=this-year`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setStatement(data);
+        setFormData({
+          companyName: data.companyName,
+          financialYear: data.financialYear,
+          sales: (data.sales || 0).toString(),
+          serviceIncome: (data.serviceIncome || 0).toString(),
+          interestIncome: (data.interestIncome || 0).toString(),
+          otherIncome: (data.otherIncome || 0).toString(),
+          costOfMaterials: (data.costOfMaterials || 0).toString(),
+          salaries: (data.salaries || 0).toString(),
+          rent: (data.rent || 0).toString(),
+          utilities: (data.utilities || 0).toString(),
+          financeCost: (data.financeCost || 0).toString(),
+          depreciation: (data.depreciation || 0).toString(),
+          amortization: (data.amortization || 0).toString(),
+          otherExpenses: (data.otherExpenses || 0).toString(),
+        });
+        setAiInsights({
+          insights: data.aiInsights,
+          recommendations: data.aiRecommendations
+        });
+        setShowResult(true);
+      } else {
+        alert(data.message || "Failed to generate dynamic P&L statement");
+      }
+    } catch (error) {
+      console.error("Error auto-generating statement:", error);
+      alert("Connection error. Failed to generate statement.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const generateStatement = async () => {
     setIsLoading(true);
     
@@ -471,14 +515,24 @@ const ProfitLoss = () => {
                 ))}
               </div>
 
-              <Button
-                onClick={generateStatement}
-                disabled={isLoading}
-                className="w-full h-14 rounded-full bg-slate-950 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800"
-              >
-                <Calculator className="mr-2 h-5 w-5" />
-                {isLoading ? "Generating..." : "Generate P&L Statement with AI"}
-              </Button>
+              <div className="flex flex-col md:flex-row gap-4 pt-4">
+                <Button
+                  onClick={autoGenerateStatement}
+                  disabled={isLoading}
+                  className="flex-1 h-14 rounded-full bg-indigo-900 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-indigo-800"
+                >
+                  <Sparkles className="mr-2 h-5 w-5 text-yellow-300" />
+                  {isLoading ? "Generating..." : "Auto-Generate from Live Data"}
+                </Button>
+                <Button
+                  onClick={generateStatement}
+                  disabled={isLoading}
+                  className="flex-1 h-14 rounded-full bg-slate-950 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800"
+                >
+                  <Calculator className="mr-2 h-5 w-5" />
+                  {isLoading ? "Generating..." : "Calculate (Manual)"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

@@ -22,14 +22,16 @@ const verifyToken = (req, res, next) => {
 // ✅ POST route to add bookkeeping entry
 router.post("/add", verifyToken, async (req, res) => {
     try {
-        const { date, description, type, amount, category } = req.body;
+        const { date, description, type, amount, category, referenceId, isAutomated } = req.body;
         const newEntry = new BookkeepingEntry({
             userId: req.user.id,
             date: new Date(date),
             description,
             type,
             amount,
-            category
+            category,
+            referenceId: referenceId || null,
+            isAutomated: isAutomated || false
         });
         await newEntry.save();
         res.status(201).json({

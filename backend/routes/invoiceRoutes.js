@@ -3,14 +3,42 @@ import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import jwt from "jsonwebtoken";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "Access denied. No token provided." });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(400).json({ message: "Invalid token" });
+  }
+};
+
+const verifyTokenOptional = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = decoded;
+    } catch (error) {
+      // Ignore invalid token
+    }
+  }
+  next();
+};
+
 // ✅ Invoice Schema
 const invoiceSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   // Invoice Details
   invoiceNumber: { type: String, required: true, unique: true },
   invoiceDate: { type: Date, required: true },
@@ -117,10 +145,17 @@ const invoiceSchema = new mongoose.Schema({
 const Invoice = mongoose.model("Invoice", invoiceSchema);
 
 // ✅ 1. Create New Invoice
-router.post("/create", async (req, res) => {
+router.post("/create", verifyTokenOptional, async (req, res) => {
   try {
     console.log("📥 Received Invoice Data:", JSON.stringify(req.body, null, 2));
     const invoiceData = req.body;
+
+    if (req.user) {
+      invoiceData.userId = req.user.id;
+      if (!invoiceData.createdBy) {
+        invoiceData.createdBy = req.user.id;
+      }
+    }
 
     // Generate invoice number if not provided
     if (!invoiceData.invoiceNumber) {
@@ -166,7 +201,7 @@ router.post("/create", async (req, res) => {
 });
 
 // ✅ 2. Get All Invoices
-router.get("/all", async (req, res) => {
+router.get("/all", verifyTokenOptional, async (req, res) => {
   try {
     const {
       page = 1,
@@ -179,7 +214,22 @@ router.get("/all", async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
-    const query = { isDeleted: false };
+    if (!req.user) {
+      return res.json({
+        invoices: [],
+        totalInvoices: 0,
+        totalPages: 0,
+        currentPage: 1
+      });
+    }
+
+    const query = {
+      isDeleted: false,
+      $or: [
+        { userId: new mongoose.Types.ObjectId(req.user.id) },
+        { createdBy: req.user.id }
+      ]
+    };
 
     // Apply filters
     if (status) query.status = status;
@@ -247,7 +297,7 @@ router.get("/all", async (req, res) => {
 });
 
 // ✅ Search Invoices - keep before "/:id" so Express does not treat "search" as an invoice id
-router.get("/search", async (req, res) => {
+router.get("/search", verifyTokenOptional, async (req, res) => {
   try {
     const {
       query,
@@ -262,7 +312,22 @@ router.get("/search", async (req, res) => {
       });
     }
 
-    const searchQuery = { isDeleted: false };
+    if (!req.user) {
+      return res.json({
+        invoices: [],
+        totalInvoices: 0,
+        totalPages: 0,
+        currentPage: 1
+      });
+    }
+
+    const searchQuery = {
+      isDeleted: false,
+      $or: [
+        { userId: new mongoose.Types.ObjectId(req.user.id) },
+        { createdBy: req.user.id }
+      ]
+    };
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     if (field === 'all') {
@@ -537,11 +602,26 @@ router.patch("/:id/payment", async (req, res) => {
 });
 
 // ✅ 10. Get Invoice Statistics
-router.get("/stats/overview", async (req, res) => {
+router.get("/stats/overview", verifyTokenOptional, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const matchQuery = { isDeleted: false };
+    if (!req.user) {
+      return res.json({
+        overall: { totalInvoices: 0, totalAmount: 0, totalPaid: 0, totalDue: 0, avgInvoiceAmount: 0 },
+        byStatus: [],
+        byPaymentStatus: [],
+        monthlyTrend: []
+      });
+    }
+
+    const matchQuery = {
+      isDeleted: false,
+      $or: [
+        { userId: new mongoose.Types.ObjectId(req.user.id) },
+        { createdBy: req.user.id }
+      ]
+    };
 
     // Add date filter if provided
     if (startDate || endDate) {
@@ -689,7 +769,7 @@ router.get("/stats/overview", async (req, res) => {
 });
 
 // ✅ 11. Generate Invoice Report
-router.get("/reports/generate", async (req, res) => {
+router.get("/reports/generate", verifyTokenOptional, async (req, res) => {
   try {
     const {
       format = 'json',
@@ -699,7 +779,17 @@ router.get("/reports/generate", async (req, res) => {
       paymentStatus
     } = req.query;
 
-    const query = { isDeleted: false };
+    if (!req.user) {
+      return res.json({ reportGenerated: new Date(), totalRecords: 0, data: [] });
+    }
+
+    const query = {
+      isDeleted: false,
+      $or: [
+        { userId: new mongoose.Types.ObjectId(req.user.id) },
+        { createdBy: req.user.id }
+      ]
+    };
 
     // Apply filters
     if (startDate || endDate) {
@@ -754,15 +844,23 @@ router.get("/reports/generate", async (req, res) => {
 });
 
 // ✅ 12. Get Overdue Invoices
-router.get("/overdue", async (req, res) => {
+router.get("/overdue", verifyTokenOptional, async (req, res) => {
   try {
     const today = new Date();
+
+    if (!req.user) {
+      return res.json({ totalOverdueInvoices: 0, totalOverdueAmount: 0, overdueInvoices: [] });
+    }
 
     const overdueInvoices = await Invoice.find({
       isDeleted: false,
       paymentStatus: { $ne: 'paid' },
       dueDate: { $lt: today },
-      balanceDue: { $gt: 0 }
+      balanceDue: { $gt: 0 },
+      $or: [
+        { userId: new mongoose.Types.ObjectId(req.user.id) },
+        { createdBy: req.user.id }
+      ]
     })
       .sort({ dueDate: 1 })
       .limit(50);

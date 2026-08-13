@@ -1,7 +1,22 @@
 import express from "express";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
+import { resolvePeriod, getFinanceMetrics, getLiveBalanceSheet } from "../utils/financeAggregator.js";
 
 const router = express.Router();
+
+const verifyToken = (req, res, next) => {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Access denied. No token provided." });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.status(400).json({ message: "Invalid token" });
+    }
+};
 
 // Financial Ratios Schema
 const financialRatiosSchema = new mongoose.Schema({
@@ -79,6 +94,100 @@ router.get("/history", async (req, res) => {
   } catch (error) {
     console.error("Error fetching financial ratios:", error);
     res.status(500).json({ message: "Error fetching financial ratios" });
+  }
+});
+
+// ✅ GET route to dynamically generate Financial Ratios based on Balance Sheet & dynamic P&L
+// IMPORTANT: Must be registered BEFORE /:id to avoid Express matching "generate" as an id param
+router.get("/generate", verifyToken, async (req, res) => {
+  try {
+    const { period, startDate: startQuery, endDate: endQuery, companyName } = req.query;
+    let start, end;
+    
+    if (period) {
+      const resolved = resolvePeriod(period);
+      start = resolved.startDate;
+      end = resolved.endDate;
+    } else if (startQuery && endQuery) {
+      start = new Date(startQuery);
+      end = new Date(endQuery);
+    } else {
+      const resolved = resolvePeriod("this-month");
+      start = resolved.startDate;
+      end = resolved.endDate;
+    }
+
+    const metrics = await getFinanceMetrics(req.user.id, start, end);
+    const selectedPeriod = period || "this-month";
+    const liveBS = await getLiveBalanceSheet(req.user.id, selectedPeriod);
+
+    // Fetch latest balance sheet for fallback
+    let latestBS = null;
+    try {
+      const BalanceSheet = mongoose.model("BalanceSheet");
+      latestBS = await BalanceSheet.findOne({ userId: req.user.id }).sort({ createdAt: -1 });
+    } catch (e) {
+      latestBS = null;
+    }
+
+    const currentAssets = (liveBS.assets.currentAssets > 0 ? liveBS.assets.currentAssets : (latestBS?.currentAssets || 0));
+    const currentLiabilities = (liveBS.liabilities.currentLiabilities > 0 ? liveBS.liabilities.currentLiabilities : (latestBS?.currentLiabilities || 0));
+    const totalAssets = (liveBS.assets.totalAssets > 0 ? liveBS.assets.totalAssets : (latestBS?.totalAssets || 0));
+    const totalLiabilities = (liveBS.liabilities.totalLiabilities > 0 ? liveBS.liabilities.totalLiabilities : (latestBS?.totalLiabilities || 0));
+    const equity = (liveBS.equity.totalEquity !== 0 ? liveBS.equity.totalEquity : (latestBS?.equity || 0));
+    const totalEquity = equity;
+    const totalDebt = totalLiabilities;
+    const inventory = liveBS.assets.inventory || 0;
+
+    const revenue = metrics.revenue.total;
+    const expenses = metrics.expense.total;
+    const netIncome = metrics.netProfit;
+
+    // Check if we have required data
+    const hasEnoughData = (currentAssets > 0 || currentLiabilities > 0 || totalAssets > 0 || revenue > 0);
+
+    if (!hasEnoughData) {
+      return res.status(200).json({ 
+        message: "Not enough data",
+        hasEnoughData: false
+      });
+    }
+
+    // Calculate ratios
+    const ratios = {
+      currentRatio: currentLiabilities > 0 ? currentAssets / currentLiabilities : (currentAssets > 0 ? 1 : 0),
+      debtToEquity: totalEquity > 0 ? totalDebt / totalEquity : 0,
+      debtRatio: totalAssets > 0 ? totalDebt / totalAssets : 0,
+      quickRatio: currentLiabilities > 0 ? (currentAssets - inventory) / currentLiabilities : (currentAssets > 0 ? 1 : 0),
+      grossProfitMargin: revenue > 0 ? ((revenue - metrics.expense.cogs) / revenue) * 100 : 0,
+      netProfitMargin: revenue > 0 ? (netIncome / revenue) * 100 : 0,
+      roe: totalEquity > 0 ? (netIncome / totalEquity) * 100 : 0,
+      roa: totalAssets > 0 ? (netIncome / totalAssets) * 100 : 0,
+      assetsTurnover: totalAssets > 0 ? revenue / totalAssets : 0,
+      eps: 0,
+    };
+
+    res.json({
+      hasEnoughData: true,
+      companyName: companyName || latestBS.companyName || "Your Company",
+      period: period || `${start.getFullYear()}-${end.getFullYear()}`,
+      currentAssets,
+      currentLiabilities,
+      totalAssets,
+      totalLiabilities,
+      equity,
+      totalEquity,
+      revenue,
+      expenses,
+      netIncome,
+      totalDebt,
+      sharesOutstanding: 0,
+      inventory,
+      ratios
+    });
+  } catch (error) {
+    console.error("Error generating financial ratios:", error);
+    res.status(500).json({ message: "Error generating financial ratios", error: error.message });
   }
 });
 

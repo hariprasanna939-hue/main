@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Download, Calculator, Sparkles, TrendingUp, Search, FileText, Database, BarChart3 } from "lucide-react";
 import { DEFAULT_REPORT_COMPANY_NAME, REPORT_FOOTER_COMPANY, getReportCompanyName } from "@/lib/reportBranding";
+import { API_BASE_URL } from "@/lib/api";
 
 interface FormData {
   companyName: string;
@@ -82,6 +83,75 @@ const FinancialRatios = () => {
   // Results State
   const [calculatedRatios, setCalculatedRatios] = useState<any>(null);
   const [showResult, setShowResult] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const autoGenerateRatios = async () => {
+    setErrorMessage(null);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_BASE_URL}/financial-ratios/generate?companyName=${encodeURIComponent(formData.companyName)}&period=this-year`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        if (data.hasEnoughData === false || data.message === "Not enough data") {
+          setErrorMessage("Not enough data");
+          setCalculatedRatios(null);
+          setShowResult(true);
+          return;
+        }
+
+        setCalculatedRatios(data.ratios);
+        setFormData({
+          companyName: data.companyName,
+          currentAssets: (data.currentAssets || 0).toString(),
+          currentLiabilities: (data.currentLiabilities || 0).toString(),
+          totalAssets: (data.totalAssets || 0).toString(),
+          totalLiabilities: (data.totalLiabilities || 0).toString(),
+          equity: (data.equity || 0).toString(),
+          totalEquity: (data.totalEquity || 0).toString(),
+          revenue: (data.revenue || 0).toString(),
+          expenses: (data.expenses || 0).toString(),
+          netIncome: (data.netIncome || 0).toString(),
+          totalDebt: (data.totalDebt || 0).toString(),
+          sharesOutstanding: (data.sharesOutstanding || 0).toString(),
+          inventory: (data.inventory || 0).toString()
+        });
+        
+        // Create new record
+        const newRecord: RatioRecord = {
+          id: Date.now().toString(),
+          companyName: getReportCompanyName(data.companyName),
+          period: data.period,
+          currentAssets: data.currentAssets,
+          currentLiabilities: data.currentLiabilities,
+          totalAssets: data.totalAssets,
+          totalLiabilities: data.totalLiabilities,
+          equity: data.equity,
+          totalEquity: data.totalEquity,
+          revenue: data.revenue,
+          expenses: data.expenses,
+          netIncome: data.netIncome,
+          totalDebt: data.totalDebt,
+          sharesOutstanding: data.sharesOutstanding,
+          inventory: data.inventory,
+          ratios: data.ratios,
+          createdAt: new Date().toLocaleDateString()
+        };
+
+        setRatiosHistory(prev => [newRecord, ...prev]);
+        setFilteredHistory(prev => [newRecord, ...prev]);
+        setShowResult(true);
+      } else {
+        alert(data.message || "Failed to generate dynamic ratios");
+      }
+    } catch (error) {
+      console.error("Error auto-generating ratios:", error);
+      alert("Connection error. Failed to generate ratios.");
+    }
+  };
 
   // History State
   const [searchTerm, setSearchTerm] = useState("");
@@ -443,17 +513,33 @@ Powered by Advanced Ratio Engine
                 </div>
 
                 {/* Calculate Button */}
-                <div className="flex gap-4 pt-4">
+                <div className="flex flex-col md:flex-row gap-4 pt-4">
+                  <Button
+                    onClick={autoGenerateRatios}
+                    className="h-14 flex-1 rounded-full bg-indigo-900 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-indigo-800"
+                  >
+                    <Sparkles className="mr-2 h-5 w-5 text-yellow-300" />
+                    Auto-Generate from Live Data
+                  </Button>
                   <Button
                     onClick={calculateRatios}
                     className="h-14 flex-1 rounded-full bg-slate-950 text-lg font-semibold text-white shadow-[0_20px_48px_rgba(15,23,42,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800"
                   >
                     <Calculator className="mr-2 h-5 w-5" />
-                    Calculate Ratios
+                    Calculate (Manual)
                   </Button>
                 </div>
 
                 {/* Display Results */}
+                {showResult && errorMessage === "Not enough data" && (
+                  <Card className="liquid-panel relative overflow-hidden rounded-[36px] border-rose-400/50 p-8 bg-rose-50/10 text-center animate-in fade-in duration-700">
+                    <p className="text-xl text-rose-400 font-semibold mb-2">Not enough data</p>
+                    <p className="text-sm text-slate-600 max-w-md mx-auto">
+                      There is no Balance Sheet record available to compute financial ratios. Please generate a Balance Sheet first to populate current assets, liabilities, and equity values.
+                    </p>
+                  </Card>
+                )}
+
                 {showResult && calculatedRatios && (
                   <Card className="liquid-panel relative overflow-hidden rounded-[36px] border-white/55 animate-in fade-in duration-700">
                     <div className="absolute left-0 right-0 top-0 h-1 animate-pulse bg-gradient-to-r from-transparent via-sky-400 to-transparent" />

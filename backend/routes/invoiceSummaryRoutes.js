@@ -1,5 +1,19 @@
 import express from "express";
+import jwt from "jsonwebtoken";
 import InvoiceSummary from "../models/InvoiceSummary.js";
+
+const verifyTokenOptional = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = decoded;
+    } catch (error) {
+      // Ignore invalid token
+    }
+  }
+  next();
+};
 
 const router = express.Router();
 
@@ -46,7 +60,7 @@ router.post("/create", async (req, res) => {
 });
 
 // ✅ 2. Get All Invoice Summaries
-router.get("/all", async (req, res) => {
+router.get("/all", verifyTokenOptional, async (req, res) => {
     try {
         const {
             page = 1,
@@ -55,16 +69,24 @@ router.get("/all", async (req, res) => {
             sortOrder = 'desc'
         } = req.query;
 
+        if (!req.user) {
+            return res.json({
+                invoiceSummaries: [],
+                pagination: { total: 0, page: 1, limit: parseInt(limit), pages: 0 }
+            });
+        }
+
+        const query = { createdbyid: req.user.id };
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const sort = {};
         sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-        const invoiceSummaries = await InvoiceSummary.find()
+        const invoiceSummaries = await InvoiceSummary.find(query)
             .sort(sort)
             .skip(skip)
             .limit(parseInt(limit));
 
-        const total = await InvoiceSummary.countDocuments();
+        const total = await InvoiceSummary.countDocuments(query);
 
         res.json({
             invoiceSummaries,

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { VoiceButton } from "@/components/ui/VoiceButton";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { API_ENDPOINTS } from "@/lib/api";
+import { API_ENDPOINTS, API_BASE_URL } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,9 +78,35 @@ const CashFlow = () => {
     setShowPrediction(false);
   };
 
-  const predictCashflow = () => {
+  const predictCashflow = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_BASE_URL}/cashflow/predict`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.hasEnoughData && data.predictions) {
+          const futurePredictions: PredictionData[] = data.predictions.map((p: any) => ({
+            month: p.month,
+            predictedNetCashFlow: p.predictedNet,
+            time: p.time
+          }));
+          setPredictions(futurePredictions);
+          setShowPrediction(true);
+          return;
+        } else {
+          alert(data.message || "Not enough historical data for reliable prediction");
+          setShowPrediction(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching prediction from backend:", e);
+    }
+
     if (cashflowData.length < 2) {
-      alert("Enter at least 2 entries to predict!");
+      alert("Not enough historical data for reliable prediction");
       return;
     }
 
@@ -90,7 +116,7 @@ const CashFlow = () => {
     const sumXY = cashflowData.reduce((sum, entry) => sum + entry.time * entry.netCashFlow, 0);
     const sumXX = cashflowData.reduce((sum, entry) => sum + entry.time * entry.time, 0);
 
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const slope = (n * sumXY - sumX * sumY) / ((n * sumXX - sumX * sumX) || 1);
     const intercept = (sumY - slope * sumX) / n;
 
     const futurePredictions: PredictionData[] = [];
