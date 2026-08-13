@@ -121,7 +121,7 @@ const isDateInPeriod = (dateInput: any, period: string): boolean => {
 };
 
 const toNumber = (value: unknown) => Number(value) || 0;
-const formatCurrency = (value: unknown) => `₹${toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const formatCurrency = (value: unknown) => `₹${toNumber(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // --- Main Component ---
 
@@ -141,6 +141,8 @@ const Dashboard = () => {
   const [allPayrolls, setAllPayrolls] = useState<any[]>([]);
   const [allBalanceSheets, setAllBalanceSheets] = useState<any[]>([]);
   const [allBookkeepingEntries, setAllBookkeepingEntries] = useState<any[]>([]);
+  const [plGen, setPlGen] = useState<any>(null);
+  const [cfGen, setCfGen] = useState<any>(null);
 
   // Modules Dynamic Data States
   const [dashboardStats, setDashboardStats] = useState<any[]>(emptyStats);
@@ -264,10 +266,15 @@ const Dashboard = () => {
           if (parsed) setAllBalanceSheets(parsed);
         }
 
-        const [statements, bookkeeping] = await Promise.all([
+        const [statements, bookkeeping, plGenData, cfGenData] = await Promise.all([
           readJson(`${API_BASE_URL}/cashflow-statement/all`),
-          readJson(`${API_BASE_URL}/bookkeeping/all`)
+          readJson(`${API_BASE_URL}/bookkeeping/all`),
+          readJson(`${API_BASE_URL}/profitloss/generate?period=${selectedPeriod}`),
+          readJson(`${API_BASE_URL}/cashflow-statement/generate?period=${selectedPeriod}`)
         ]);
+
+        if (plGenData) setPlGen(plGenData);
+        if (cfGenData) setCfGen(cfGenData);
 
         const cashFlowStatementData = Array.isArray(statements) ? statements : [];
         const bookkeepingEntries = Array.isArray(bookkeeping?.entries) ? bookkeeping.entries : [];
@@ -289,38 +296,53 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [selectedPeriod]);
 
   // Update calculations whenever period or raw data changes
   useEffect(() => {
     const filteredInvoices = allInvoices.filter(inv => isDateInPeriod(inv.invoiceDate, selectedPeriod));
     const filteredPurchases = allPurchaseInvoices.filter(inv => isDateInPeriod(inv.createdAt || inv.billDate, selectedPeriod));
-    const filteredPayrolls = allPayrolls.filter(pr => isDateInPeriod(pr.createdAt, selectedPeriod));
 
     const revenue = filteredInvoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
     const purchaseExpenses = filteredPurchases.reduce((sum, inv) => sum + (inv.total || 0), 0);
-    const payrollExpenses = filteredPayrolls.reduce((sum, pr) => sum + (pr.grossSalary || 0), 0);
-    const expenses = purchaseExpenses + payrollExpenses;
-    const profit = revenue - expenses;
 
     const selectedPeriodBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, selectedPeriod));
     const bkIncome = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
     const bkExpense = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
 
-    setDashboardStats([
-      { title: "Total Receivables", amount: bkIncome > 0 ? formatCurrency(bkIncome) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#006aff]", icon: TrendingUp },
-      { title: "Total Payables", amount: bkExpense > 0 ? formatCurrency(bkExpense) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#f0483e]", icon: Receipt },
-      { title: "Net Profit", amount: profit !== 0 ? formatCurrency(profit) : "₹0.00", trend: "", isPositive: profit >= 0, hasData: profit !== 0, iconColor: "text-[#00b365]", icon: BarChart2 },
-      { title: "GST Payable", amount: "₹0.00", trend: "", isPositive: true, hasData: false, iconColor: "text-[#0288d1]", icon: Receipt },
-    ]);
+    if (plGen && cfGen) {
+      const netProf = plGen.netProfit || 0;
+      setDashboardStats([
+        { title: "Total Receivables", amount: cfGen.cashFlow?.receivables > 0 ? formatCurrency(cfGen.cashFlow.receivables) : (bkIncome > 0 ? formatCurrency(bkIncome) : "₹0.00"), trend: "", isPositive: true, hasData: true, iconColor: "text-[#006aff]", icon: TrendingUp },
+        { title: "Total Payables", amount: cfGen.cashFlow?.payables > 0 ? formatCurrency(cfGen.cashFlow.payables) : (bkExpense > 0 ? formatCurrency(bkExpense) : "₹0.00"), trend: "", isPositive: true, hasData: true, iconColor: "text-[#f0483e]", icon: Receipt },
+        { title: "Net Profit", amount: formatCurrency(netProf), trend: "", isPositive: netProf >= 0, hasData: netProf !== 0, iconColor: "text-[#00b365]", icon: BarChart2 },
+        { title: "GST Payable", amount: (cfGen.cashFlow?.gstPayable && cfGen.cashFlow.gstPayable > 0) ? formatCurrency(cfGen.cashFlow.gstPayable) : "₹0.00", trend: "", isPositive: true, hasData: (cfGen.cashFlow?.gstPayable !== undefined && cfGen.cashFlow.gstPayable > 0), iconColor: "text-[#0288d1]", icon: Receipt },
+      ]);
 
-    setPlSummaryData({
-      totalRevenue: revenue,
-      totalExpenses: expenses,
-      netProfit: profit,
-      grossProfitMargin: revenue > 0 ? ((revenue - purchaseExpenses) / revenue) * 100 : 0,
-      netProfitMargin: revenue > 0 ? (profit / revenue) * 100 : 0
-    });
+      setPlSummaryData({
+        totalRevenue: plGen.totalRevenue || 0,
+        totalExpenses: plGen.totalExpenses || 0,
+        netProfit: netProf,
+        grossProfitMargin: plGen.totalRevenue > 0 ? (((plGen.totalRevenue - (plGen.costOfMaterials || 0)) / plGen.totalRevenue) * 100) : 0,
+        netProfitMargin: plGen.profitMargin || 0
+      });
+    } else {
+      const fallbackProfit = bkIncome - bkExpense;
+      setDashboardStats([
+        { title: "Total Receivables", amount: bkIncome > 0 ? formatCurrency(bkIncome) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#006aff]", icon: TrendingUp },
+        { title: "Total Payables", amount: bkExpense > 0 ? formatCurrency(bkExpense) : "₹0.00", trend: "", isPositive: true, hasData: true, iconColor: "text-[#f0483e]", icon: Receipt },
+        { title: "Net Profit", amount: fallbackProfit !== 0 ? formatCurrency(fallbackProfit) : "₹0.00", trend: "", isPositive: fallbackProfit >= 0, hasData: fallbackProfit !== 0, iconColor: "text-[#00b365]", icon: BarChart2 },
+        { title: "GST Payable", amount: "₹0.00", trend: "", isPositive: true, hasData: false, iconColor: "text-[#0288d1]", icon: Receipt },
+      ]);
+
+      setPlSummaryData({
+        totalRevenue: bkIncome || revenue,
+        totalExpenses: bkExpense || purchaseExpenses,
+        netProfit: fallbackProfit,
+        grossProfitMargin: revenue > 0 ? ((revenue - purchaseExpenses) / revenue) * 100 : 0,
+        netProfitMargin: revenue > 0 ? (fallbackProfit / revenue) * 100 : 0
+      });
+    }
 
     const selectedPeriodInvoices = allInvoices.filter(inv => isDateInPeriod(inv.invoiceDate, selectedPeriod));
     const mappedInvoices = selectedPeriodInvoices.slice(0, 5).map((inv: any) => {
@@ -364,9 +386,10 @@ const Dashboard = () => {
       const currentRatio = bsCurrentLiabilities ? bsCurrentAssets / bsCurrentLiabilities : 0;
       const quickRatio = bsCurrentLiabilities ? (bsCurrentAssets - bsInventory) / bsCurrentLiabilities : 0;
       const debtToEquity = bsTotalEquity ? bsTotalDebt / bsTotalEquity : 0;
+      const profVal = plSummaryData.netProfit || 0;
       const grossMargin = revenue ? ((revenue - purchaseExpenses) / revenue) * 100 : 0;
-      const netMargin = revenue ? (profit / revenue) * 100 : 0;
-      const roe = bsTotalEquity ? (profit / bsTotalEquity) * 100 : 0;
+      const netMargin = revenue ? (profVal / revenue) * 100 : 0;
+      const roe = bsTotalEquity ? (profVal / bsTotalEquity) * 100 : 0;
 
       setFinancialRatios([
         { label: "Current Ratio", value: currentRatio ? currentRatio.toFixed(2) : "0.00", status: currentRatio >= 1.5 ? "Good" : "Low" },
@@ -582,6 +605,9 @@ const Dashboard = () => {
         content += `${inv.id}\t${inv.company}\t${inv.amount}\t${inv.status}\n`;
       });
     } else if (reportType === "Cash Flow Statement") {
+      const cfsInflow = Number(cfGen?.cashFlow?.inflow || 0);
+      const cfsOutflow = Number(cfGen?.cashFlow?.outflow || 0);
+      const cfsNetFlow = Number(cfGen?.cashFlow?.net || 0);
       content += `Operating Activities: +₹${(cfsInflow * 0.8).toLocaleString()}\n`;
       content += `Investing Activities: -₹${(cfsOutflow * 0.3).toLocaleString()}\n`;
       content += `Financing Activities: +₹${(cfsInflow * 0.2).toLocaleString()}\n`;

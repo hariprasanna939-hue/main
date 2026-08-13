@@ -14,6 +14,8 @@ const inventorySchema = new mongoose.Schema({
     sku: { type: String, required: true },
     quantity: { type: Number, required: true, default: 0 },
     price: { type: Number, required: true },
+    costPrice: { type: Number },
+    buyPrice: { type: Number },
     category: { type: String, default: 'General' },
     gstRate: { type: Number, default: 0 }, // GST slab: 0, 5, 18, 28
     sgst: { type: Number, default: 0 },
@@ -59,6 +61,8 @@ router.post("/add", verifyToken, async (req, res) => {
             sku,
             quantity,
             price,
+            costPrice: req.body.costPrice || req.body.buyPrice || undefined,
+            buyPrice: req.body.buyPrice || req.body.costPrice || undefined,
             category,
             gstRate: effectiveGstRate,
             // Store split values for backward compatibility (50-50 split by default)

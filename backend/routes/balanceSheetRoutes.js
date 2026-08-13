@@ -1,10 +1,26 @@
 import express from "express";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
+import { getLiveBalanceSheet } from "../utils/financeAggregator.js";
 
 const router = express.Router();
 
+const verifyTokenOptional = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = decoded;
+    } catch (error) {
+      // Ignore invalid token
+    }
+  }
+  next();
+};
+
 // ✅ Define Balance Sheet Schema - Updated to match Python file structure
 const balanceSheetSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   companyName: { type: String },
   financialYear: { type: String },
   // Assets
@@ -40,12 +56,13 @@ const balanceSheetSchema = new mongoose.Schema({
 const BalanceSheet = mongoose.model("BalanceSheet", balanceSheetSchema);
 
 // ✅ POST route — Save balance sheet data
-router.post("/add", async (req, res) => {
+router.post("/add", verifyTokenOptional, async (req, res) => {
   try {
     const balanceData = req.body;
 
     // Fill missing fields with 0 to avoid validation errors
     const dataToSave = {
+      userId: req.user ? req.user.id : undefined,
       companyName: balanceData.companyName || "",
       financialYear: balanceData.financialYear || "",
       // Assets
@@ -87,10 +104,19 @@ router.post("/add", async (req, res) => {
   }
 });
 
-// ✅ GET route — Fetch all balance sheets
-router.get("/", async (req, res) => {
+// ✅ GET route — Fetch all balance sheets for authenticated user
+router.get("/", verifyTokenOptional, async (req, res) => {
   try {
-    const sheets = await BalanceSheet.find().sort({ createdAt: -1 });
+    if (!req.user || !req.user.id) {
+      return res.status(200).json([]);
+    }
+    const userObjectId = new mongoose.Types.ObjectId(req.user.id);
+    const sheets = await BalanceSheet.find({
+      $or: [
+        { userId: userObjectId },
+        { userId: req.user.id }
+      ]
+    }).sort({ createdAt: -1 });
     res.status(200).json(sheets);
   } catch (error) {
     console.error("Error fetching balance sheets:", error);
@@ -101,10 +127,22 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ✅ GET route — Fetch balance sheet summary
-router.get("/summary", async (req, res) => {
+// ✅ GET route — Fetch balance sheet summary for authenticated user
+router.get("/summary", verifyTokenOptional, async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.json({ totalAssets: 0, totalLiabilities: 0, totalEquity: 0, balancedCount: 0, totalRecords: 0 });
+    }
+    const userObjectId = new mongoose.Types.ObjectId(req.user.id);
     const summary = await BalanceSheet.aggregate([
+      {
+        $match: {
+          $or: [
+            { userId: userObjectId },
+            { userId: req.user.id }
+          ]
+        }
+      },
       {
         $group: {
           _id: null,
@@ -119,13 +157,38 @@ router.get("/summary", async (req, res) => {
       }
     ]);
 
-    res.json(summary[0] || {});
+    res.json(summary[0] || { totalAssets: 0, totalLiabilities: 0, totalEquity: 0, balancedCount: 0, totalRecords: 0 });
   } catch (error) {
     console.error("Error fetching balance sheet summary:", error);
     res.status(500).json({ 
       message: "Error fetching balance sheet summary", 
       error: error.message 
     });
+  }
+});
+
+// ✅ GET route — Generate Live Balance Sheet connected to centralized finance flow
+router.get("/generate", verifyTokenOptional, async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(200).json({
+        companyName: "Your Company",
+        financialYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+        period: req.query.period || "this-month",
+        assets: { cashAndBank: 0, accountsReceivable: 0, inventory: 0, currentAssets: 0, fixedAssets: 0, totalAssets: 0 },
+        liabilities: { accountsPayable: 0, currentLiabilities: 0, nonCurrentLiabilities: 0, totalLiabilities: 0 },
+        equity: { ownerEquity: 0, retainedEarnings: 0, totalEquity: 0 },
+        totalLiabilitiesEquity: 0,
+        balanced: true,
+        breakdown: { assets: { currentAssets: [], nonCurrentAssets: [] }, liabilities: { currentLiabilities: [], nonCurrentLiabilities: [] }, equity: [] }
+      });
+    }
+    const period = req.query.period || "this-month";
+    const liveBS = await getLiveBalanceSheet(req.user.id, period);
+    res.status(200).json(liveBS);
+  } catch (error) {
+    console.error("Error generating live balance sheet:", error);
+    res.status(500).json({ message: "Error generating live balance sheet", error: error.message });
   }
 });
 

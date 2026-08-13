@@ -28,6 +28,14 @@ const bookkeepingEntrySchema = new mongoose.Schema({
         enum: ["income", "expense"],
         required: true,
     },
+    referenceId: {
+        type: String,
+        default: null,
+    },
+    isAutomated: {
+        type: Boolean,
+        default: false,
+    },
     createdAt: {
         type: Date,
         default: Date.now,

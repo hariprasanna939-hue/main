@@ -1,7 +1,22 @@
 import express from "express";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
+import { resolvePeriod, getFinanceMetrics } from "../utils/financeAggregator.js";
 
 const router = express.Router();
+
+const verifyToken = (req, res, next) => {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Access denied. No token provided." });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.status(400).json({ message: "Invalid token" });
+    }
+};
 
 // ✅ Define ProfitLoss schema - UPDATED to match Python file with 8 expenses
 const profitLossSchema = new mongoose.Schema({
@@ -207,6 +222,68 @@ router.get("/insights/:id", async (req, res) => {
   } catch (error) {
     console.error("❌ Error fetching AI insights:", error);
     res.status(500).json({ message: "Error fetching insights", error });
+  }
+});
+
+// ✅ GET route to dynamically generate Profit & Loss statement based on all modules
+router.get("/generate", verifyToken, async (req, res) => {
+  try {
+    const { period, startDate: startQuery, endDate: endQuery, companyName, financialYear } = req.query;
+    let start, end;
+    
+    if (period) {
+      const resolved = resolvePeriod(period);
+      start = resolved.startDate;
+      end = resolved.endDate;
+    } else if (startQuery && endQuery) {
+      start = new Date(startQuery);
+      end = new Date(endQuery);
+    } else {
+      const resolved = resolvePeriod("this-month");
+      start = resolved.startDate;
+      end = resolved.endDate;
+    }
+
+    const metrics = await getFinanceMetrics(req.user.id, start, end);
+
+    // Call generateAIInsights using aggregated metrics
+    const { insights, recommendations } = generateAIInsights(
+      metrics.revenue.total,
+      metrics.expense.total,
+      metrics.netProfit,
+      metrics.profitMargin,
+      metrics.expense.cogs
+    );
+
+    res.json({
+      companyName: companyName || "Your Company",
+      financialYear: financialYear || `${start.getFullYear()}-${end.getFullYear()}`,
+      // Revenue
+      sales: metrics.revenue.sales,
+      serviceIncome: 0,
+      interestIncome: 0,
+      otherIncome: metrics.revenue.bookkeepingIncome + metrics.revenue.inventorySales,
+      totalRevenue: metrics.revenue.total,
+      // Expenses (8 fields)
+      costOfMaterials: metrics.expense.costOfMaterials + metrics.expense.cogs,
+      salaries: metrics.expense.salaries,
+      rent: metrics.expense.rent,
+      utilities: metrics.expense.utilities,
+      financeCost: metrics.expense.financeCost,
+      depreciation: metrics.expense.depreciation,
+      amortization: metrics.expense.amortization,
+      otherExpenses: metrics.expense.otherExpenses,
+      totalExpenses: metrics.expense.total,
+      // Results
+      netProfit: metrics.netProfit,
+      profitMargin: metrics.profitMargin,
+      profitable: metrics.netProfit > 0,
+      aiInsights: insights,
+      aiRecommendations: recommendations
+    });
+  } catch (error) {
+    console.error("Error generating Profit & Loss statement:", error);
+    res.status(500).json({ message: "Error generating statement", error: error.message });
   }
 });
 
