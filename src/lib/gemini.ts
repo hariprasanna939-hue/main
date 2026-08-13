@@ -147,6 +147,18 @@ ${balanceList.slice(0, 5).map((bs: any) => `- Date: ${bs.createdAt}, Assets: ₹
 };
 
 export const callGemini = async (chatMessages: ChatMessage[]): Promise<string> => {
+  try {
+    const res = await apiRequest(`${API_BASE_URL}/ai/cfo-chat`, {
+      method: "POST",
+      body: JSON.stringify({ history: chatMessages })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.reply;
+    }
+  } catch (err) {
+    console.error("Error calling backend CFO chat:", err);
+  }
   const response = await runCallGemini(chatMessages);
   return response.replace(/\*\*/g, "");
 };

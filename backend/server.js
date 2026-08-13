@@ -23,6 +23,8 @@ import aiRoutes from "./routes/aiRoutes.js";
 import purchaseInvoiceRoutes from "./routes/purchaseInvoiceRoutes.js";
 import scannedDocRoutes from "./routes/scannedDocRoutes.js";
 import civilEngineeringRoutes from "./routes/civilEngineeringRoutes.js";
+import customerRoutes from "./routes/customerRoutes.js";
+import invoiceTemplateRoutes from "./routes/invoiceTemplateRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -152,7 +154,7 @@ app.post("/api/signup", async (req, res) => {
     const newUser = new User({ email, password: hashedPassword, role });
     await newUser.save();
 
-    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.status(201).json({ message: "User registered successfully", token, user: { role: newUser.role } });
   } catch (error) {
@@ -198,7 +200,7 @@ app.post("/api/signup-trial", async (req, res) => {
 
     await newUser.save();
 
-    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.status(201).json({
       message: "Free trial started successfully",
@@ -244,7 +246,7 @@ app.post("/api/signin", async (req, res) => {
     const validPass = await bcrypt.compare(password, user.password);
     if (!validPass) return res.status(400).json({ message: "Invalid password" });
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.json({
       message: "Login successful",
@@ -547,7 +549,7 @@ app.post("/api/verify-payment", async (req, res) => {
 
       await newUser.save();
 
-      const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+      const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
       return res.status(201).json({
         message: "Development mode: User registered successfully",
@@ -594,7 +596,7 @@ app.post("/api/verify-payment", async (req, res) => {
 
     await newUser.save();
 
-    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.status(201).json({
       message: "Payment verified and user registered successfully",
@@ -629,6 +631,8 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/purchase-invoice", purchaseInvoiceRoutes);
 app.use("/api/scanned-docs", scannedDocRoutes);
 app.use("/api/civil-engineering", civilEngineeringRoutes);
+app.use("/api/customers", customerRoutes);
+app.use("/api/invoice-templates", invoiceTemplateRoutes);
 
 // ✅ Start Server (after MongoDB connection)
 const PORT = process.env.PORT || 5000;

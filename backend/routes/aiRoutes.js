@@ -3,6 +3,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { uploadInvoiceFile } from "../utils/invoiceStorage.js";
 import jwt from "jsonwebtoken";
 import ChatMessage from "../models/ChatMessage.js";
+import Invoice from "../models/Invoice.js";
+import Customer from "../models/Customer.js";
+import LedgerAccount from "../models/LedgerAccount.js";
+import BookkeepingEntry from "../models/BookkeepingEntry.js";
+import CashTransaction from "../models/CashTransaction.js";
 
 const router = express.Router();
 
@@ -471,6 +476,116 @@ router.delete("/chat-history", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("Error clearing chat history:", error);
     res.status(500).json({ success: false, message: "Failed to clear chat history" });
+  }
+});
+
+// POST /api/ai/cfo-chat
+router.post("/cfo-chat", verifyToken, async (req, res) => {
+  try {
+    const { history } = req.body;
+    const userId = req.user.id;
+
+    if (!history || !Array.isArray(history)) {
+      return res.status(400).json({ success: false, message: "History array is required" });
+    }
+
+    // 1. Gather all tenant metrics from DB
+    const [invoices, customers, ledgerAccounts, bookkeepingEntries, cashflowEntries] = await Promise.all([
+      Invoice.find({ userId, isDeleted: false }),
+      Customer.find({ userId }),
+      LedgerAccount.find({ userId }),
+      BookkeepingEntry.find({ userId }),
+      CashTransaction.find({ userId })
+    ]);
+
+    // Summarize the data for Gemini context
+    const invoiceCount = invoices.length;
+    const invoiceTotal = invoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
+    const invoicePaid = invoices.filter(inv => inv.status === 'paid').reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
+    const invoiceUnpaid = invoices.filter(inv => inv.status !== 'paid' && inv.status !== 'cancelled').reduce((sum, inv) => sum + (inv.balanceDue || 0), 0);
+    const overdueInvoices = invoices.filter(inv => inv.status === 'overdue');
+
+    const customerCount = customers.length;
+    
+    // Ledger accounts balances
+    const ledgerBalances = ledgerAccounts.map(acc => `- ${acc.name} (${acc.code}): ₹${acc.balance.toLocaleString("en-IN")}`).join("\n");
+
+    const bkIncome = bookkeepingEntries.filter(e => e.type === "income" || e.type === "Income").reduce((sum, e) => sum + (e.amount || 0), 0);
+    const bkExpense = bookkeepingEntries.filter(e => e.type === "expense" || e.type === "Expenses").reduce((sum, e) => sum + (e.amount || 0), 0);
+    const netProfit = bkIncome - bkExpense;
+
+    const cfInflow = cashflowEntries.filter(t => t.type === 'inflow').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const cfOutflow = cashflowEntries.filter(t => t.type === 'outflow').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const netCashFlow = cfInflow - cfOutflow;
+
+    const systemPrompt = `You are the AI CFO / Financial Assistant for "FinSmart" - a professional books & accounting SaaS clone of Zoho Books.
+Your tone should be highly professional, concise, clear, financial, and actionable.
+You will answer the user's questions strictly based on the company's live financial data provided in the context below.
+Do not make up figures. Do not output raw JSON or code.
+If data is missing for a calculation, explain it simply.
+Keep answers short and directly to the point. Focus on key metrics like revenue, cash balance, profits, overdue invoices, and financial ratios.
+
+=== LIVE FINANCIAL DATA CONTEXT ===
+- Registered Customers: ${customerCount}
+- Bookkeeping Income (Live Ledger): ₹${bkIncome.toLocaleString("en-IN")}
+- Bookkeeping Expenses (Live Ledger): ₹${bkExpense.toLocaleString("en-IN")}
+- Net Profit: ₹${netProfit.toLocaleString("en-IN")}
+- Total Invoices Generated: ${invoiceCount} (Total Value: ₹${invoiceTotal.toLocaleString("en-IN")})
+- Paid Invoices Value: ₹${invoicePaid.toLocaleString("en-IN")}
+- Outstanding Receivables: ₹${invoiceUnpaid.toLocaleString("en-IN")}
+- Overdue Invoices Count: ${overdueInvoices.length}
+- Actual Cash Inflow (Receipts): ₹${cfInflow.toLocaleString("en-IN")}
+- Actual Cash Outflow (Payments/Expenses): ₹${cfOutflow.toLocaleString("en-IN")}
+- Net Cash Flow: ₹${netCashFlow.toLocaleString("en-IN")}
+
+=== CHART OF ACCOUNTS BALANCES ===
+${ledgerBalances || "No ledger balances registered."}
+`;
+
+    // Process history into Gemini message format
+    const contents = [];
+    contents.push({ role: "user", parts: [{ text: systemPrompt }] });
+    contents.push({ role: "model", parts: [{ text: "Acknowledged. I will act as the AI CFO and answer strictly based on the provided live financial data." }] });
+
+    // Append conversation history
+    const recentHistory = history.slice(-10); // Keep last 10 messages for context
+    recentHistory.forEach(msg => {
+      contents.push({
+        role: msg.role === "user" ? "user" : "model",
+        parts: [{ text: msg.content }]
+      });
+    });
+
+    const ai = getGenAI();
+    let replyText = "";
+
+    if (ai) {
+      const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const result = await model.generateContent({ contents });
+      const response = await result.response;
+      replyText = response.text().trim();
+    } else {
+      // Fallback local rules if Gemini key is missing
+      const userMessage = history[history.length - 1]?.content?.toLowerCase() || "";
+      if (userMessage.includes("revenue") || userMessage.includes("income") || userMessage.includes("sales")) {
+        replyText = `Your total revenue is ₹${bkIncome.toLocaleString("en-IN")} based on bookkeeping records. You have ${invoiceCount} invoices totaling ₹${invoiceTotal.toLocaleString("en-IN")}.`;
+      } else if (userMessage.includes("expense") || userMessage.includes("spend") || userMessage.includes("cost")) {
+        replyText = `Your total expenses are ₹${bkExpense.toLocaleString("en-IN")}. Net profit is ₹${netProfit.toLocaleString("en-IN")}.`;
+      } else if (userMessage.includes("cash") || userMessage.includes("balance") || userMessage.includes("inflow")) {
+        replyText = `Net cash flow is ₹${netCashFlow.toLocaleString("en-IN")} (Inflow: ₹${cfInflow.toLocaleString("en-IN")}, Outflow: ₹${cfOutflow.toLocaleString("en-IN")}).`;
+      } else {
+        replyText = `Live Dashboard Analysis: Revenue ₹${bkIncome.toLocaleString("en-IN")}, Expenses ₹${bkExpense.toLocaleString("en-IN")}, Outstanding: ₹${invoiceUnpaid.toLocaleString("en-IN")}. Let me know if you have questions.`;
+      }
+    }
+
+    res.json({
+      success: true,
+      reply: replyText
+    });
+
+  } catch (error) {
+    console.error("❌ AI CFO Chat Error:", error);
+    res.status(500).json({ success: false, message: "AI CFO could not process the chat message", error: error.message });
   }
 });
 

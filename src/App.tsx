@@ -26,6 +26,8 @@ import AutomationInvoice from "./pages/AutomationInvoice";
 import PublicInvoiceView from "./pages/PublicInvoiceView";
 import PublicPurchaseInvoiceView from "./pages/PublicPurchaseInvoiceView";
 import ServerIssues from "./pages/ServerIssues";
+import InvoiceTemplates from "./pages/InvoiceTemplates";
+import InvoiceTemplateEditor from "./pages/InvoiceTemplateEditor";
 import AiAccountingExplained from "./pages/AiAccountingExplained";
 import ThankYou from "./pages/ThankYou";
 
@@ -76,6 +78,8 @@ const App = () => {
             <Route path="/bank-reconciliation" element={isMaintenanceMode ? <ServerIssues /> : <BankReconciliation />} />
             <Route path="/fraud-detection" element={isMaintenanceMode ? <ServerIssues /> : <FraudDetection />} />
             <Route path="/invoice" element={isMaintenanceMode ? <ServerIssues /> : <AutomationInvoice />} />
+            <Route path="/invoice/templates" element={isMaintenanceMode ? <ServerIssues /> : <InvoiceTemplates />} />
+            <Route path="/invoice/templates/create" element={isMaintenanceMode ? <ServerIssues /> : <InvoiceTemplateEditor />} />
             <Route path="/invoice/ocr" element={isMaintenanceMode ? <ServerIssues /> : <AutomationInvoice />} />
             <Route path="/invoice/view/:id" element={<PublicInvoiceView />} />
             <Route path="/purchase-invoice/view/:id" element={<PublicPurchaseInvoiceView />} />
