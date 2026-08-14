@@ -278,7 +278,6 @@ const Dashboard = () => {
         if (plGenData) setPlGen(plGenData);
         if (cfGenData) setCfGen(cfGenData);
         if (gstData) setGstAnalyticsData(gstData);
-
         const cashFlowStatementData = Array.isArray(statements) ? statements : [];
         const bookkeepingEntries = Array.isArray(bookkeeping?.entries) ? bookkeeping.entries : [];
         

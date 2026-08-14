@@ -1,12 +1,15 @@
 // API Configuration utility
-const isDevelopment = import.meta.env.VITE_DEV_MODE === 'true';
+const isDevelopment = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || 
+   window.location.hostname === '127.0.0.1' || 
+   window.location.hostname.startsWith('192.168.'));
 
 // Get the appropriate API URL based on environment
 export const getApiUrl = (): string => {
   if (isDevelopment) {
     return import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
   }
-  return import.meta.env.VITE_PROD_API_URL || 'https://software.saaiss.in/api';
+  return 'https://software.saaiss.in/api';
 };
 
 // Base API URL
