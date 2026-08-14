@@ -135,7 +135,7 @@ const Dashboard = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   
   // Period filtering & Raw Datasets States
-  const [selectedPeriod, setSelectedPeriod] = useState<string>("last-month");
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("this-month");
   const [allInvoices, setAllInvoices] = useState<any[]>([]);
   const [allPurchaseInvoices, setAllPurchaseInvoices] = useState<any[]>([]);
   const [allPayrolls, setAllPayrolls] = useState<any[]>([]);
@@ -143,6 +143,7 @@ const Dashboard = () => {
   const [allBookkeepingEntries, setAllBookkeepingEntries] = useState<any[]>([]);
   const [plGen, setPlGen] = useState<any>(null);
   const [cfGen, setCfGen] = useState<any>(null);
+  const [gstAnalyticsData, setGstAnalyticsData] = useState<any>(null);
 
   // Modules Dynamic Data States
   const [dashboardStats, setDashboardStats] = useState<any[]>(emptyStats);
@@ -266,15 +267,17 @@ const Dashboard = () => {
           if (parsed) setAllBalanceSheets(parsed);
         }
 
-        const [statements, bookkeeping, plGenData, cfGenData] = await Promise.all([
+        const [statements, bookkeeping, plGenData, cfGenData, gstData] = await Promise.all([
           readJson(`${API_BASE_URL}/cashflow-statement/all`),
           readJson(`${API_BASE_URL}/bookkeeping/all`),
           readJson(`${API_BASE_URL}/profitloss/generate?period=${selectedPeriod}`),
-          readJson(`${API_BASE_URL}/cashflow-statement/generate?period=${selectedPeriod}`)
+          readJson(`${API_BASE_URL}/cashflow-statement/generate?period=${selectedPeriod}`),
+          readJson(`${API_BASE_URL}/tax/analytics?period=${selectedPeriod}`)
         ]);
 
         if (plGenData) setPlGen(plGenData);
         if (cfGenData) setCfGen(cfGenData);
+        if (gstData) setGstAnalyticsData(gstData);
 
         const cashFlowStatementData = Array.isArray(statements) ? statements : [];
         const bookkeepingEntries = Array.isArray(bookkeeping?.entries) ? bookkeeping.entries : [];
@@ -1192,20 +1195,20 @@ const Dashboard = () => {
                      <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
                         <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Output GST</p>
                         <p className="text-[20px] font-bold text-[#222] tabular-nums">
-                          {formatCurrency(plSummaryData.totalRevenue * 0.18)}
+                          {formatCurrency(gstAnalyticsData?.gstSummary?.outputGst || 0)}
                         </p>
                      </div>
                      <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
                         <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Input ITC</p>
                         <p className="text-[20px] font-bold text-[#00b365] tabular-nums">
-                          {formatCurrency(plSummaryData.totalExpenses * 0.18)}
+                          {formatCurrency(gstAnalyticsData?.gstSummary?.inputGst || 0)}
                         </p>
                      </div>
                   </div>
                   <div className="flex justify-between items-center p-5 mt-2 bg-[#fdf2f2] rounded border border-[#fbd4d4]">
                      <span className="text-[16px] font-bold text-[#f0483e]">Net GST Payable</span>
                      <span className="text-[20px] font-bold text-[#f0483e] tabular-nums">
-                       {formatCurrency(Math.max(0, (plSummaryData.totalRevenue * 0.18) - (plSummaryData.totalExpenses * 0.18)))}
+                       {formatCurrency(gstAnalyticsData?.gstSummary?.gstPayable || 0)}
                      </span>
                   </div>
                </div>

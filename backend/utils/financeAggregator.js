@@ -75,7 +75,10 @@ export async function getFinanceMetrics(userId, start, end) {
 
     // 1. Fetch Bookkeeping Entries
     const bookkeepingEntries = await BookkeepingEntry.find({
-        userId: userObjectId,
+        $or: [
+            { userId: userObjectId },
+            { userId: userId.toString() }
+        ],
         date: { $gte: startDate, $lte: endDate }
     });
 
@@ -104,9 +107,13 @@ export async function getFinanceMetrics(userId, start, end) {
     let salesInvoices = [];
     if (Invoice) {
         salesInvoices = await Invoice.find({
-            // Filter by creator, mapping to userId. Support both userId and createdBy
-            $or: [{ userId: userObjectId }, { createdBy: userId }],
-            isDeleted: false,
+            $or: [
+                { userId: userObjectId },
+                { userId: userId.toString() },
+                { createdBy: userObjectId },
+                { createdBy: userId.toString() }
+            ],
+            isDeleted: { $ne: true },
             sourceInvoiceType: { $ne: "purchase" },
             invoiceDate: { $gte: startDate, $lte: endDate }
         });
@@ -116,17 +123,35 @@ export async function getFinanceMetrics(userId, start, end) {
     const salesInvoiceSubtotalRevenue = salesInvoices.reduce((sum, inv) => sum + (inv.subtotal || 0), 0);
     // Cash Inflow: actual cash collected (post-tax value)
     const salesInvoiceCashInflow = salesInvoices.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0);
-    // Outstanding invoices (Accounts Receivable)
-    const salesInvoiceOutstanding = salesInvoices
-        .filter(inv => inv.paymentStatus !== "paid")
-        .reduce((sum, inv) => sum + (inv.balanceDue || 0), 0);
 
-    // 3. Fetch Purchase Invoices
+    // Outstanding invoices (Accounts Receivable up to period end)
+    let salesInvoiceOutstanding = 0;
+    if (Invoice) {
+        const allSalesInvoicesUpToPeriod = await Invoice.find({
+            $or: [
+                { userId: userObjectId },
+                { userId: userId.toString() },
+                { createdBy: userObjectId },
+                { createdBy: userId.toString() }
+            ],
+            isDeleted: { $ne: true },
+            sourceInvoiceType: { $ne: "purchase" },
+            invoiceDate: { $lte: endDate }
+        });
+        salesInvoiceOutstanding = allSalesInvoicesUpToPeriod
+            .filter(inv => inv.paymentStatus !== "paid" && inv.status !== "paid")
+            .reduce((sum, inv) => sum + (inv.balanceDue || 0), 0);
+    }
+
+    // 3. Fetch Purchase Invoices (Period-scoped for P&L / Cash Flow)
     const PurchaseInvoice = getPurchaseInvoiceModel();
     let purchaseInvoices = [];
     if (PurchaseInvoice) {
         purchaseInvoices = await PurchaseInvoice.find({
-            userId: userObjectId,
+            $or: [
+                { userId: userObjectId },
+                { userId: userId.toString() }
+            ],
             createdAt: { $gte: startDate, $lte: endDate }
         });
     }
@@ -135,12 +160,26 @@ export async function getFinanceMetrics(userId, start, end) {
     const purchaseInvoiceSubtotalExpense = purchaseInvoices.reduce((sum, inv) => sum + (inv.subtotal || 0), 0);
     // Cash Outflow: actual paid amount (post-tax value)
     const purchaseInvoiceCashOutflow = purchaseInvoices.reduce((sum, inv) => sum + (inv.paid || 0), 0);
-    // Outstanding payables (Accounts Payable)
-    const purchaseInvoiceOutstanding = purchaseInvoices.reduce((sum, inv) => sum + (inv.balance || 0), 0);
+
+    // Outstanding payables (Accounts Payable up to period end)
+    let purchaseInvoiceOutstanding = 0;
+    if (PurchaseInvoice) {
+        const allPurchaseInvoicesUpToPeriod = await PurchaseInvoice.find({
+            $or: [
+                { userId: userObjectId },
+                { userId: userId.toString() }
+            ],
+            createdAt: { $lte: endDate }
+        });
+        purchaseInvoiceOutstanding = allPurchaseInvoicesUpToPeriod.reduce((sum, inv) => sum + (inv.balance || 0), 0);
+    }
 
     // 4. Fetch Direct Inventory Sales
     const inventorySales = await Sale.find({
-        userId: userObjectId,
+        $or: [
+            { userId: userObjectId },
+            { userId: userId.toString() }
+        ],
         saleDate: { $gte: startDate, $lte: endDate }
     });
 
@@ -258,7 +297,10 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
 
     // 1. Fetch Bookkeeping Entries up to period end
     const bkEntries = await BookkeepingEntry.find({
-        userId: userObjectId,
+        $or: [
+            { userId: userObjectId },
+            { userId: userId.toString() }
+        ],
         date: { $lte: endDate }
     });
     const validBkEntries = bkEntries.filter(e => !e.isAutomated && !e.referenceId);
@@ -495,9 +537,10 @@ export async function getGstAnalytics(userId, period = "this-month") {
 
     salesInvoices.forEach(inv => {
         salesTaxable += (inv.subtotal || 0);
-        const cgst = inv.cgst || (inv.items ? inv.items.reduce((s, i) => s + (i.cgstAmount || 0), 0) : 0);
-        const sgst = inv.sgst || (inv.items ? inv.items.reduce((s, i) => s + (i.sgstAmount || 0), 0) : 0);
-        const igst = inv.igst || (inv.items ? inv.items.reduce((s, i) => s + (i.igstAmount || 0), 0) : 0);
+        const hasItems = Array.isArray(inv.items);
+        const cgst = inv.cgst || (hasItems ? inv.items.reduce((s, i) => s + (i.cgstAmount || 0), 0) : 0);
+        const sgst = inv.sgst || (hasItems ? inv.items.reduce((s, i) => s + (i.sgstAmount || 0), 0) : 0);
+        const igst = inv.igst || (hasItems ? inv.items.reduce((s, i) => s + (i.igstAmount || 0), 0) : 0);
         const tax = inv.taxAmount || inv.totalTax || (cgst + sgst + igst);
 
         outputCgst += cgst;
@@ -528,9 +571,10 @@ export async function getGstAnalytics(userId, period = "this-month") {
 
     purchaseInvoices.forEach(inv => {
         purchaseTaxable += (inv.subtotal || 0);
-        const cgst = inv.totalCgst || inv.cgst || (inv.items ? inv.items.reduce((s, i) => s + (i.cgstAmount || 0), 0) : 0);
-        const sgst = inv.totalSgst || inv.sgst || (inv.items ? inv.items.reduce((s, i) => s + (i.sgstAmount || 0), 0) : 0);
-        const igst = inv.totalIgst || inv.igst || (inv.items ? inv.items.reduce((s, i) => s + (i.igstAmount || 0), 0) : 0);
+        const hasItems = Array.isArray(inv.items);
+        const cgst = inv.totalCgst || inv.cgst || (hasItems ? inv.items.reduce((s, i) => s + (i.cgstAmount || 0), 0) : 0);
+        const sgst = inv.totalSgst || inv.sgst || (hasItems ? inv.items.reduce((s, i) => s + (i.sgstAmount || 0), 0) : 0);
+        const igst = inv.totalIgst || inv.igst || (hasItems ? inv.items.reduce((s, i) => s + (i.igstAmount || 0), 0) : 0);
         const tax = inv.totalTax || inv.taxAmount || (cgst + sgst + igst);
 
         inputCgst += cgst;
