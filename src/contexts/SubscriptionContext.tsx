@@ -1,0 +1,152 @@
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { API_ENDPOINTS } from "@/lib/api";
+
+export type UserProfile = {
+  id: string;
+  email: string;
+  name?: string;
+  role?: "admin" | "instore";
+  subscriptionStatus?: "pending" | "active" | "expired";
+  subscriptionPlan?: "trial" | "monthly" | "annual" | "lifetime";
+  subscriptionAmount?: number;
+  subscriptionStartDate?: string;
+  subscriptionEndDate?: string;
+  trialEndDate?: string;
+  sellerName?: string;
+  sellerPhone?: string;
+  sellerEmail?: string;
+  sellerGSTIN?: string;
+  sellerState?: string;
+  sellerAddress?: string;
+};
+
+type SubscriptionContextType = {
+  user: UserProfile | null;
+  loading: boolean;
+  hasAccess: (moduleName: string) => boolean;
+  refreshUser: () => Promise<UserProfile | null>;
+  showUpgradeModalFor: string | null;
+  openUpgradeModal: (moduleName: string) => void;
+  closeUpgradeModal: () => void;
+};
+
+const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
+
+// Syncing permitted modules list per plan
+export const planModules: Record<string, string[]> = {
+  trial: ["dashboard", "invoice", "inventory", "bookkeeping"], // Sandbox
+  monthly: ["dashboard", "invoice", "inventory"], // Express
+  annual: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios"], // Professional
+  lifetime: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering"] // Enterprise
+};
+
+export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showUpgradeModalFor, setShowUpgradeModalFor] = useState<string | null>(null);
+
+  const refreshUser = async (): Promise<UserProfile | null> => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return null;
+    }
+
+    try {
+      const res = await fetch(API_ENDPOINTS.USER, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data);
+        return data;
+      } else {
+        // Token might be invalid
+        localStorage.removeItem("token");
+        setUser(null);
+        return null;
+      }
+    } catch (err) {
+      console.error("Error fetching user profile in SubscriptionProvider:", err);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshUser();
+
+    // Dynamically load Razorpay checkout script on mount
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      // Clean up script on unmount
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    };
+  }, []);
+
+  const hasAccess = (moduleName: string): boolean => {
+    if (!user) return false;
+
+    // dashboard is always accessible to authenticated users
+    if (moduleName === "dashboard") return true;
+
+    // In-store POS accounts are hard-restricted to Invoice and Inventory only
+    if (user.role === "instore") {
+      return ["invoice", "inventory"].includes(moduleName);
+    }
+
+    // Check if subscription has expired
+    const isExpired = user.subscriptionStatus === "expired" || (
+      user.subscriptionEndDate && new Date(user.subscriptionEndDate).getTime() < Date.now()
+    ) || (
+      user.subscriptionPlan === "trial" && user.trialEndDate && new Date(user.trialEndDate).getTime() < Date.now()
+    );
+
+    if (isExpired) {
+      // Expired accounts only have dashboard access
+      return false;
+    }
+
+    const plan = user.subscriptionPlan || "monthly";
+    const allowed = planModules[plan] || [];
+    return allowed.includes(moduleName);
+  };
+
+  const openUpgradeModal = (moduleName: string) => {
+    setShowUpgradeModalFor(moduleName);
+  };
+
+  const closeUpgradeModal = () => {
+    setShowUpgradeModalFor(null);
+  };
+
+  return (
+    <SubscriptionContext.Provider value={{
+      user,
+      loading,
+      hasAccess,
+      refreshUser,
+      showUpgradeModalFor,
+      openUpgradeModal,
+      closeUpgradeModal
+    }}>
+      {children}
+    </SubscriptionContext.Provider>
+  );
+};
+
+export const useSubscription = () => {
+  const context = useContext(SubscriptionContext);
+  if (!context) {
+    throw new Error("useSubscription must be used within a SubscriptionProvider");
+  }
+  return context;
+};

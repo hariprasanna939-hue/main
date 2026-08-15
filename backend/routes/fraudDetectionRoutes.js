@@ -24,6 +24,7 @@ const upload = multer({
 
 // ✅ Fraud Detection Rule Schema
 const fraudRuleSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
   ruleName: { type: String, required: true },
   ruleType: {
     type: String,
@@ -43,6 +44,7 @@ const fraudRuleSchema = new mongoose.Schema({
 
 // ✅ Fraud Transaction Schema
 const fraudTransactionSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
   transactionId: { type: String, required: true },
   date: { type: Date, required: true },
   amount: { type: Number, required: true },
@@ -81,7 +83,7 @@ const detectionAnalysisSchema = new mongoose.Schema({
   fileOriginalName: { type: String },
   supabaseFilePath: { type: String }, // Supabase storage URL
   processingTime: { type: Number }, // in milliseconds
-  userId: { type: String },
+  userId: { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -91,9 +93,7 @@ const DetectionAnalysis = mongoose.model("DetectionAnalysis", detectionAnalysisS
 
 // ✅ Helper function to extract amount from text
 const extractAmount = (text) => {
-  // Remove currency symbols and clean the text
   const cleaned = text.replace(/[\$₹€£Rs\.INR]/gi, '').trim();
-  // Match numbers like 1,234.56 or 1234.56 or 1234
   const amountMatch = cleaned.match(/([\d,]+\.?\d*)/);
   if (amountMatch) {
     const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
@@ -104,12 +104,11 @@ const extractAmount = (text) => {
 
 // ✅ Helper function to extract date from text
 const extractDate = (text) => {
-  // Match various date formats
   const datePatterns = [
-    /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/,  // DD/MM/YYYY or MM/DD/YYYY
-    /(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})/,    // YYYY-MM-DD
-    /([A-Za-z]+\s+\d{1,2},?\s*\d{4})/,          // Month DD, YYYY
-    /(\d{1,2}\s+[A-Za-z]+\s+\d{4})/             // DD Month YYYY
+    /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/,
+    /(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})/,
+    /([A-Za-z]+\s+\d{1,2},?\s*\d{4})/,
+    /(\d{1,2}\s+[A-Za-z]+\s+\d{4})/
   ];
 
   for (const pattern of datePatterns) {
@@ -127,14 +126,12 @@ const parsePDFLines = (lines) => {
   console.log(`📄 Total lines: ${lines.length}`);
   console.log('📄 First 10 lines:', lines.slice(0, 10));
 
-  // Pattern to match any number that looks like an amount (with or without currency)
   const amountPattern = /(?:[\$₹€£]|Rs\.?|INR)?\s*([\d,]+\.?\d{0,2})\b/g;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line || line.length < 5) continue;
 
-    // Find all potential amounts in the line
     const amounts = [];
     let match;
     const tempLine = line;
@@ -147,22 +144,17 @@ const parsePDFLines = (lines) => {
     }
 
     if (amounts.length > 0) {
-      // Get the largest amount (likely the transaction amount)
       const maxAmount = Math.max(...amounts);
 
-      // Only consider significant amounts (> 10 to filter out dates/page numbers)
       if (maxAmount > 10) {
-        // Try to extract date
         const dateStr = extractDate(line);
 
-        // Clean description
         let description = line
           .replace(/[\$₹€£]?\s*[\d,]+\.?\d*/g, '')
           .replace(/\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/g, '')
           .replace(/\s+/g, ' ')
           .trim();
 
-        // Skip headers and totals
         const skipKeywords = ['total', 'balance', 'summary', 'page', 'statement', 'opening', 'closing', 'header', 'date', 'amount'];
         const isSkipLine = skipKeywords.some(kw => description.toLowerCase() === kw ||
           (description.toLowerCase().includes(kw) && description.length < 20));
@@ -179,7 +171,6 @@ const parsePDFLines = (lines) => {
     }
   }
 
-  // If no amounts found, try table parsing
   if (data.length === 0) {
     console.log('📋 Trying table-based parsing...');
 
@@ -226,7 +217,6 @@ const parsePDFLines = (lines) => {
     }
   }
 
-  // Last resort: extract any line with numbers > 100 as potential transactions
   if (data.length === 0) {
     console.log('📋 Trying last resort parsing...');
     for (let i = 0; i < lines.length; i++) {
@@ -235,14 +225,14 @@ const parsePDFLines = (lines) => {
       if (numbers) {
         for (const num of numbers) {
           const amt = parseFloat(num.replace(/,/g, ''));
-          if (amt > 100 && amt < 10000000) { // Reasonable transaction range
+          if (amt > 100 && amt < 10000000) {
             data.push({
               Date: extractDate(line) || new Date().toLocaleDateString(),
               Amount: amt,
               Description: line.replace(/[\d,\.]+/g, '').trim().substring(0, 100) || 'Transaction'
             });
             console.log(`   ✓ Last resort: ${amt}`);
-            break; // One per line
+            break;
           }
         }
       }
@@ -267,33 +257,29 @@ const isPopperAvailable = () => {
 const performOCR = async (filePath) => {
   console.log('🔍 Starting OCR process for scanned PDF...');
 
-  // Check if Poppler is available
   if (!isPopperAvailable()) {
     throw new Error('OCR requires Poppler to be installed. Run: brew install poppler');
   }
 
-  // Create temp directory for images
   const tempDir = path.join(path.dirname(filePath), `ocr_temp_${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
 
   let worker = null;
 
   try {
-    // Convert PDF to images using pdftoppm (use 150 DPI for faster processing)
     console.log('📸 Converting PDF to images...');
     const outputPrefix = path.join(tempDir, 'page');
 
     try {
       execSync(`pdftoppm -png -r 150 "${filePath}" "${outputPrefix}"`, {
         stdio: 'pipe',
-        timeout: 30000 // 30 second timeout
+        timeout: 30000
       });
     } catch (convertError) {
       console.error('❌ PDF to image conversion failed:', convertError.message);
       throw new Error('Failed to convert PDF to images for OCR');
     }
 
-    // Get all generated images
     const images = fs.readdirSync(tempDir)
       .filter(f => f.endsWith('.png'))
       .sort()
@@ -305,7 +291,6 @@ const performOCR = async (filePath) => {
       throw new Error('Failed to convert PDF to images - no images generated');
     }
 
-    // Perform OCR on each image
     let fullText = '';
 
     console.log('🔤 Initializing Tesseract OCR...');
@@ -329,30 +314,20 @@ const performOCR = async (filePath) => {
     }
 
     console.log(`📝 OCR total extracted: ${fullText.length} characters`);
-    if (fullText.length > 0) {
-      console.log('📄 First 500 chars of OCR text:', fullText.substring(0, 500));
-    }
-
     return fullText;
   } catch (error) {
     console.error('❌ OCR process error:', error.message);
     throw error;
   } finally {
-    // Terminate worker if it exists
     if (worker) {
       try {
         await worker.terminate();
-      } catch (e) {
-        console.warn('⚠️ Could not terminate Tesseract worker');
-      }
+      } catch (e) {}
     }
 
-    // Cleanup temp directory
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch (e) {
-      console.warn('⚠️ Could not clean up temp directory:', e.message);
-    }
+    } catch (e) {}
   }
 };
 
@@ -367,7 +342,7 @@ const processUploadedFile = async (filePath, fileType) => {
           .pipe(csvParser())
           .on('data', (row) => data.push(row))
           .on('end', () => {
-            fs.unlinkSync(filePath); // Clean up file
+            fs.unlinkSync(filePath);
             resolve(data);
           })
           .on('error', reject);
@@ -376,7 +351,7 @@ const processUploadedFile = async (filePath, fileType) => {
       const workbook = xlsx.readFile(filePath);
       const sheetName = workbook.SheetNames[0];
       data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
-      fs.unlinkSync(filePath); // Clean up file
+      fs.unlinkSync(filePath);
       return data;
     } else if (fileType === 'pdf') {
       console.log('📄 Processing PDF file...');
@@ -384,26 +359,18 @@ const processUploadedFile = async (filePath, fileType) => {
       let extractedText = '';
       let textExtractionWorked = false;
 
-      // Try pdf-parse first (more reliable for most PDFs)
       try {
         const dataBuffer = fs.readFileSync(filePath);
         const pdfData = await pdfParse(dataBuffer);
 
-        console.log(`📊 PDF parsed: ${pdfData.numpages} page(s)`);
-        console.log(`📝 Text length: ${pdfData.text.length} characters`);
-
         if (pdfData.text && pdfData.text.trim().length > 50) {
           extractedText = pdfData.text;
           textExtractionWorked = true;
-          console.log('✅ pdf-parse extraction successful');
-        } else {
-          console.log('⚠️ pdf-parse extraction insufficient, trying pdf2json fallback...');
         }
       } catch (pdfParseError) {
         console.warn('⚠️ pdf-parse failed:', pdfParseError.message);
       }
 
-      // Try pdf2json as fallback for text extraction
       if (!textExtractionWorked) {
         try {
           const pdf2jsonText = await new Promise((resolve, reject) => {
@@ -437,24 +404,17 @@ const processUploadedFile = async (filePath, fileType) => {
             pdfParser.loadPDF(filePath);
           });
 
-          console.log(`📝 pdf2json extracted ${pdf2jsonText.length} characters`);
-
           if (pdf2jsonText.trim().length > 50) {
             extractedText = pdf2jsonText;
             textExtractionWorked = true;
-            console.log('✅ pdf2json extraction successful');
           }
         } catch (pdf2jsonError) {
           console.warn('⚠️ pdf2json failed:', pdf2jsonError.message);
         }
       }
 
-      // If text extraction failed, try OCR
       if (!textExtractionWorked) {
-        console.log('📷 PDF appears to be scanned/image-based. Attempting OCR...');
-        console.log('⏱️ OCR may take 1-2 minutes for scanned documents...');
         try {
-          // Add 3 minute timeout for OCR
           const ocrPromise = performOCR(filePath);
           const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('OCR timed out after 3 minutes')), 180000)
@@ -462,7 +422,6 @@ const processUploadedFile = async (filePath, fileType) => {
           extractedText = await Promise.race([ocrPromise, timeoutPromise]);
           if (extractedText.trim().length > 50) {
             textExtractionWorked = true;
-            console.log('✅ OCR extraction successful');
           }
         } catch (ocrError) {
           console.error('❌ OCR failed:', ocrError.message);
@@ -471,29 +430,22 @@ const processUploadedFile = async (filePath, fileType) => {
         }
       }
 
-      // Clean up file if not already cleaned
       try { fs.unlinkSync(filePath); } catch (e) {}
 
       if (!textExtractionWorked || extractedText.trim().length < 50) {
         throw new Error('PDF appears to be empty or could not be read. Please try uploading a CSV or Excel file instead.');
       }
 
-      // Parse the extracted text
-      console.log('📄 First 500 chars:', extractedText.substring(0, 500));
       const lines = extractedText.split('\n').filter(line => line.trim());
-      console.log(`📋 Found ${lines.length} non-empty lines`);
-
       if (lines.length < 2) {
         throw new Error('PDF has insufficient data. Please upload a PDF with transaction data in table format.');
       }
 
       const result = parsePDFLines(lines);
-
       if (result.length === 0) {
         throw new Error('Could not identify transaction data in PDF. Please ensure the PDF contains a table with Date, Amount, and Description columns.');
       }
 
-      console.log(`✅ Successfully extracted ${result.length} transactions from PDF`);
       return result;
     }
 
@@ -505,7 +457,6 @@ const processUploadedFile = async (filePath, fileType) => {
 
 // ✅ 1. Upload and Process Transactions File
 router.post("/upload", upload.single('file'), async (req, res) => {
-  // Set longer timeout for OCR processing (5 minutes)
   req.setTimeout(300000);
   res.setTimeout(300000);
 
@@ -514,56 +465,42 @@ router.post("/upload", upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const { algorithm, parameters, userId } = req.body;
-    console.log('Request Body:', req.body);
-
-    console.log('Algorithm:', algorithm);
-    console.log('Parameters:', parameters);
-    console.log('User ID:', userId);
-    console.log('File:', req.file);
+    const { algorithm, parameters } = req.body;
+    const userId = req.user.id; // Enforce user ID from authentication token
     const filePath = req.file.path;
     const fileType = req.file.originalname.split('.').pop().toLowerCase();
 
-    // Only accept CSV and Excel files (PDF support temporarily disabled)
     if (!['csv', 'xlsx', 'xls'].includes(fileType)) {
-      fs.unlinkSync(filePath); // Clean up uploaded file
+      fs.unlinkSync(filePath);
       return res.status(400).json({
         message: "Unsupported file type. Please upload CSV or Excel files only. PDF support is temporarily disabled."
       });
     }
 
-    // Upload to Supabase for backup (auto-deletes after 12 hours)
     let supabaseFile = null;
     try {
       supabaseFile = await uploadToSupabase(filePath, req.file.originalname);
-      if (supabaseFile) {
-        console.log(`☁️ File backed up to Supabase: ${supabaseFile.fileName}`);
-      }
     } catch (supabaseError) {
       console.warn('⚠️ Supabase upload skipped:', supabaseError.message);
     }
 
-    // Process the uploaded file
     const transactions = await processUploadedFile(filePath, fileType);
 
-    // Apply fraud detection based on algorithm
     let flaggedTransactions = [];
-
     switch (algorithm) {
       case 'rule_based':
-        flaggedTransactions = await applyRuleBasedDetection(transactions, parameters);
+        flaggedTransactions = await applyRuleBasedDetection(transactions, parameters, userId);
         break;
       case 'zscore':
-        flaggedTransactions = await applyZScoreDetection(transactions, parameters);
+        flaggedTransactions = await applyZScoreDetection(transactions, parameters, userId);
         break;
       case 'isolation_forest':
-        flaggedTransactions = await applyIsolationForestDetection(transactions, parameters);
+        flaggedTransactions = await applyIsolationForestDetection(transactions, parameters, userId);
         break;
       default:
-        flaggedTransactions = await applyRuleBasedDetection(transactions, parameters);
+        flaggedTransactions = await applyRuleBasedDetection(transactions, parameters, userId);
     }
 
-    // Save analysis record
     const analysisId = `ANALYSIS_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const analysis = new DetectionAnalysis({
       analysisId,
@@ -574,11 +511,10 @@ router.post("/upload", upload.single('file'), async (req, res) => {
       fileOriginalName: req.file.originalname,
       supabaseFilePath: supabaseFile?.fileName || null,
       userId,
-      processingTime: 0 // Could calculate actual processing time
+      processingTime: 0
     });
     await analysis.save();
 
-    // Save flagged transactions
     const savedTransactions = await FraudTransaction.insertMany(flaggedTransactions);
 
     res.status(200).json({
@@ -586,7 +522,7 @@ router.post("/upload", upload.single('file'), async (req, res) => {
       analysisId,
       totalTransactions: transactions.length,
       flaggedCount: flaggedTransactions.length,
-      transactions: savedTransactions.slice(0, 50), // Return first 50 for preview
+      transactions: savedTransactions.slice(0, 50),
       analysisSummary: {
         fraudRate: (flaggedTransactions.length / transactions.length * 100).toFixed(2) + '%',
         algorithmUsed: algorithm
@@ -595,11 +531,9 @@ router.post("/upload", upload.single('file'), async (req, res) => {
 
   } catch (error) {
     console.error("Error processing file:", error);
-    // Clean up uploaded file if it still exists
     if (req.file && req.file.path) {
       try { fs.unlinkSync(req.file.path); } catch (e) {}
     }
-    // Ensure response is sent
     if (!res.headersSent) {
       res.status(500).json({
         message: "Error processing file",
@@ -610,7 +544,7 @@ router.post("/upload", upload.single('file'), async (req, res) => {
 });
 
 // ✅ 2. Apply Rule-Based Detection
-const applyRuleBasedDetection = async (transactions, params) => {
+const applyRuleBasedDetection = async (transactions, params, userId) => {
   const parameters = typeof params === 'string' ? JSON.parse(params) : params;
   const threshold = parameters.threshold || 10000;
   const dateColumn = parameters.dateColumn || 'Date';
@@ -625,6 +559,7 @@ const applyRuleBasedDetection = async (transactions, params) => {
     .map(tx => {
       const amount = parseFloat(tx[amountColumn] || tx.amount || 0);
       return new FraudTransaction({
+        userId,
         transactionId: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         date: new Date(tx[dateColumn] || tx.date || Date.now()),
         amount: amount,
@@ -640,21 +575,19 @@ const applyRuleBasedDetection = async (transactions, params) => {
 };
 
 // ✅ 3. Apply Z-Score Detection
-const applyZScoreDetection = async (transactions, params) => {
+const applyZScoreDetection = async (transactions, params, userId) => {
   const parameters = typeof params === 'string' ? JSON.parse(params) : params;
   const zThreshold = parameters.zThreshold || 3.0;
   const dateColumn = parameters.dateColumn || 'Date';
   const amountColumn = parameters.amountColumn || 'Amount';
   const descColumn = parameters.descColumn || 'Description';
 
-  // Extract amounts
   const amounts = transactions
     .map(tx => parseFloat(tx[amountColumn] || tx.amount || 0))
     .filter(amount => !isNaN(amount));
 
   if (amounts.length === 0) return [];
 
-  // Calculate mean and standard deviation
   const mean = amounts.reduce((sum, val) => sum + val, 0) / amounts.length;
   const variance = amounts.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / amounts.length;
   const stdDev = Math.sqrt(variance);
@@ -670,12 +603,13 @@ const applyZScoreDetection = async (transactions, params) => {
       const amount = parseFloat(tx[amountColumn] || tx.amount || 0);
       const zScore = Math.abs((amount - mean) / stdDev);
       return new FraudTransaction({
+        userId,
         transactionId: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         date: new Date(tx[dateColumn] || tx.date || Date.now()),
         amount: amount,
         description: tx[descColumn] || tx.description || 'Unknown',
         detectionMethod: 'zscore',
-        fraudScore: Math.min(zScore / 10, 1.0), // Normalize to 0-1
+        fraudScore: Math.min(zScore / 10, 1.0),
         status: 'pending',
         appliedRules: [`Z-Score: ${zScore.toFixed(2)} > ${zThreshold}`],
         metadata: { zScore: zScore.toFixed(2) }
@@ -685,18 +619,16 @@ const applyZScoreDetection = async (transactions, params) => {
   return flagged;
 };
 
-// ✅ 4. Apply Isolation Forest Detection (Mock implementation)
-const applyIsolationForestDetection = async (transactions, params) => {
+// ✅ 4. Apply Isolation Forest Detection
+const applyIsolationForestDetection = async (transactions, params, userId) => {
   const parameters = typeof params === 'string' ? JSON.parse(params) : params;
   const contamination = parameters.contamination || 0.01;
   const dateColumn = parameters.dateColumn || 'Date';
   const amountColumn = parameters.amountColumn || 'Amount';
   const descColumn = parameters.descColumn || 'Description';
 
-  // Mock Isolation Forest - in production, use sklearn-isolation-forest or similar
   const flaggedCount = Math.max(1, Math.floor(transactions.length * contamination));
 
-  // Simple heuristic: flag transactions with highest amounts
   const transactionsWithIndex = transactions
     .map((tx, index) => ({
       ...tx,
@@ -709,12 +641,13 @@ const applyIsolationForestDetection = async (transactions, params) => {
   const flagged = transactionsWithIndex
     .slice(0, flaggedCount)
     .map(tx => new FraudTransaction({
+      userId,
       transactionId: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       date: new Date(tx[dateColumn] || tx.date || Date.now()),
       amount: tx.amount,
       description: tx[descColumn] || tx.description || 'Unknown',
       detectionMethod: 'isolation_forest',
-      fraudScore: Math.random() * 0.5 + 0.5, // Random score 0.5-1.0
+      fraudScore: Math.random() * 0.5 + 0.5,
       status: 'pending',
       appliedRules: ['Isolation Forest (ML)'],
       metadata: { contamination, algorithm: 'isolation_forest_mock' }
@@ -726,7 +659,10 @@ const applyIsolationForestDetection = async (transactions, params) => {
 // ✅ 5. Manage Fraud Detection Rules
 router.post("/rules/add", async (req, res) => {
   try {
-    const ruleData = req.body;
+    const ruleData = {
+      ...req.body,
+      userId: req.user.id
+    };
     const newRule = new FraudRule(ruleData);
     await newRule.save();
     res.status(201).json({
@@ -741,7 +677,7 @@ router.post("/rules/add", async (req, res) => {
 
 router.get("/rules", async (req, res) => {
   try {
-    const rules = await FraudRule.find().sort({ createdAt: -1 });
+    const rules = await FraudRule.find({ userId: req.user.id }).sort({ createdAt: -1 });
     res.json(rules);
   } catch (error) {
     console.error("Error fetching fraud rules:", error);
@@ -751,9 +687,9 @@ router.get("/rules", async (req, res) => {
 
 router.put("/rules/:id/toggle", async (req, res) => {
   try {
-    const rule = await FraudRule.findById(req.params.id);
+    const rule = await FraudRule.findOne({ _id: req.params.id, userId: req.user.id });
     if (!rule) {
-      return res.status(404).json({ message: "Rule not found" });
+      return res.status(404).json({ message: "Rule not found or access denied" });
     }
 
     rule.isActive = !rule.isActive;
@@ -769,7 +705,7 @@ router.put("/rules/:id/toggle", async (req, res) => {
   }
 });
 
-// ✅ 6. Get Flagged Transactions
+// ✅ 6. Get Flagged Transactions for User
 router.get("/transactions", async (req, res) => {
   try {
     const {
@@ -782,7 +718,7 @@ router.get("/transactions", async (req, res) => {
       limit = 50
     } = req.query;
 
-    const query = {};
+    const query = { userId: req.user.id };
 
     if (status) query.status = status;
     if (startDate || endDate) {
@@ -830,8 +766,8 @@ router.put("/transactions/:id/status", async (req, res) => {
       return res.status(400).json({ message: "Invalid status" });
     }
 
-    const transaction = await FraudTransaction.findByIdAndUpdate(
-      req.params.id,
+    const transaction = await FraudTransaction.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.id },
       {
         status,
         ...(notes && { $push: { notes } })
@@ -840,7 +776,7 @@ router.put("/transactions/:id/status", async (req, res) => {
     );
 
     if (!transaction) {
-      return res.status(404).json({ message: "Transaction not found" });
+      return res.status(404).json({ message: "Transaction not found or access denied" });
     }
 
     res.json({
@@ -857,7 +793,6 @@ router.put("/transactions/:id/status", async (req, res) => {
 router.get("/analysis", async (req, res) => {
   try {
     const {
-      userId,
       algorithm,
       startDate,
       endDate,
@@ -865,9 +800,8 @@ router.get("/analysis", async (req, res) => {
       limit = 20
     } = req.query;
 
-    const query = {};
+    const query = { userId: req.user.id };
 
-    if (userId) query.userId = userId;
     if (algorithm) query.algorithm = algorithm;
     if (startDate || endDate) {
       query.createdAt = {};
@@ -904,30 +838,35 @@ router.get("/stats", async (req, res) => {
   try {
     const now = new Date();
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const userId = req.user.id;
 
-    // Get basic counts
-    const totalTransactions = await FraudTransaction.countDocuments();
-    const flaggedTransactions = await FraudTransaction.countDocuments({ status: { $ne: 'confirmed_legit' } });
-    const confirmedFraud = await FraudTransaction.countDocuments({ status: 'confirmed_fraud' });
-    const falsePositives = await FraudTransaction.countDocuments({ status: 'false_positive' });
+    // Get basic counts with user filter
+    const totalTransactions = await FraudTransaction.countDocuments({ userId });
+    const flaggedTransactions = await FraudTransaction.countDocuments({ userId, status: { $ne: 'confirmed_legit' } });
+    const confirmedFraud = await FraudTransaction.countDocuments({ userId, status: 'confirmed_fraud' });
+    const falsePositives = await FraudTransaction.countDocuments({ userId, status: 'false_positive' });
 
-    // Get recent analysis
+    // Get recent analyses with user filter
     const recentAnalyses = await DetectionAnalysis.find({
+      userId,
       createdAt: { $gte: last30Days }
     }).sort({ createdAt: -1 }).limit(10);
 
-    // Get status distribution
+    // Get status distribution with user filter
     const statusDistribution = await FraudTransaction.aggregate([
+      { $match: { userId } },
       { $group: { _id: "$status", count: { $sum: 1 } } }
     ]);
 
-    // Get detection method distribution
+    // Get detection method distribution with user filter
     const methodDistribution = await FraudTransaction.aggregate([
+      { $match: { userId } },
       { $group: { _id: "$detectionMethod", count: { $sum: 1 } } }
     ]);
 
-    // Get amount statistics
+    // Get amount statistics with user filter
     const amountStats = await FraudTransaction.aggregate([
+      { $match: { userId } },
       {
         $group: {
           _id: null,
@@ -966,7 +905,7 @@ router.get("/export", async (req, res) => {
   try {
     const { format = 'csv', startDate, endDate } = req.query;
 
-    const query = {};
+    const query = { userId: req.user.id };
     if (startDate || endDate) {
       query.date = {};
       if (startDate) query.date.$gte = new Date(startDate);

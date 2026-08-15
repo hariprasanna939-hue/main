@@ -46,14 +46,14 @@ const invoiceSchema = new mongoose.Schema({
 
   // Customer Details
   customerName: { type: String, required: true },
-  customerEmail: { type: String, required: true },
+  customerEmail: { type: String },
   customerPhone: { type: String },
   customerAddress: { type: String },
   customerGSTIN: { type: String },
 
   // Business Details
   businessName: { type: String, required: true },
-  businessEmail: { type: String, required: true },
+  businessEmail: { type: String },
   businessPhone: { type: String },
   businessAddress: { type: String },
   businessGSTIN: { type: String },
@@ -129,6 +129,10 @@ const invoiceSchema = new mongoose.Schema({
   stateOfSupply: { type: String },
   gstPortalJson: { type: mongoose.Schema.Types.Mixed },
 
+  // Template Design Fields
+  templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'InvoiceTemplate' },
+  templateSnapshot: { type: mongoose.Schema.Types.Mixed },
+
   // System Fields
   status: {
     type: String,
@@ -143,6 +147,25 @@ const invoiceSchema = new mongoose.Schema({
 });
 
 const Invoice = mongoose.model("Invoice", invoiceSchema);
+
+// ✅ 0. Public Invoice View (no auth required — for WhatsApp/email sharing links)
+router.get("/public/:id", async (req, res) => {
+  try {
+    const invoice = await Invoice.findOne({
+      _id: req.params.id,
+      isDeleted: false
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    res.json(invoice);
+  } catch (error) {
+    console.error("Error fetching public invoice:", error);
+    res.status(500).json({ message: "Error fetching invoice", error: error.message });
+  }
+});
 
 // ✅ 1. Create New Invoice
 router.post("/create", verifyTokenOptional, async (req, res) => {

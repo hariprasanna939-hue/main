@@ -16,7 +16,7 @@ const upload = multer({
 // ✅ Reconciliation Session Schema
 const reconciliationSessionSchema = new mongoose.Schema({
     sessionId: { type: String, required: true, unique: true },
-    userId: { type: String },
+    userId: { type: String, required: true },
     ledgerFileName: String,
     bankStatementFileName: String,
     ledgerData: [{ type: Object }],
@@ -134,11 +134,10 @@ const calculateMatchScore = (ledgerTx, bankTx, options) => {
             description: 20
         };
     } else {
-        // Redistribute time weight to date and amount when time is not used
         weights = {
-            date: 35,      // 30 + 5
+            date: 35,
             time: 0,
-            amount: 45,    // 40 + 5
+            amount: 45,
             description: 20
         };
     }
@@ -275,7 +274,7 @@ router.post("/create-session", async (req, res) => {
         const sessionId = `REC_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const session = new ReconciliationSession({
             sessionId,
-            userId: req.body.userId,
+            userId: req.user.id,
             status: 'uploaded'
         });
         await session.save();
@@ -303,14 +302,19 @@ router.post("/upload-ledger", upload.single('file'), async (req, res) => {
 
         const ledgerData = await processUploadedFile(filePath, fileType);
 
-        await ReconciliationSession.findOneAndUpdate(
-            { sessionId },
+        const updatedSession = await ReconciliationSession.findOneAndUpdate(
+            { sessionId, userId: req.user.id },
             {
                 ledgerData,
                 ledgerFileName: req.file.originalname,
                 'results.totalLedgerTransactions': ledgerData.length
-            }
+            },
+            { new: true }
         );
+
+        if (!updatedSession) {
+            return res.status(404).json({ message: "Reconciliation session not found or access denied." });
+        }
 
         res.status(200).json({
             message: "Ledger uploaded successfully",
@@ -336,14 +340,19 @@ router.post("/upload-bank-statement", upload.single('file'), async (req, res) =>
 
         const bankData = await processUploadedFile(filePath, fileType);
 
-        await ReconciliationSession.findOneAndUpdate(
-            { sessionId },
+        const updatedSession = await ReconciliationSession.findOneAndUpdate(
+            { sessionId, userId: req.user.id },
             {
                 bankData,
                 bankStatementFileName: req.file.originalname,
                 'results.totalBankTransactions': bankData.length
-            }
+            },
+            { new: true }
         );
+
+        if (!updatedSession) {
+            return res.status(404).json({ message: "Reconciliation session not found or access denied." });
+        }
 
         res.status(200).json({
             message: "Bank statement uploaded successfully",
@@ -361,9 +370,9 @@ router.post("/match", async (req, res) => {
     try {
         const { sessionId, options } = req.body;
 
-        const session = await ReconciliationSession.findOne({ sessionId });
+        const session = await ReconciliationSession.findOne({ sessionId, userId: req.user.id });
         if (!session) {
-            return res.status(404).json({ message: "Session not found" });
+            return res.status(404).json({ message: "Session not found or access denied" });
         }
 
         if (!session.ledgerData || !session.bankData) {
@@ -404,7 +413,7 @@ router.post("/match", async (req, res) => {
                     unmatchedBankCount: unmatchedBank.length,
                     matchRate: ((matched.length / session.ledgerData.length) * 100).toFixed(2) + '%'
                 },
-                matched: matched.slice(0, 50), // Return first 50 for preview
+                matched: matched.slice(0, 50),
                 unmatchedLedger: unmatchedLedger.slice(0, 50),
                 unmatchedBank: unmatchedBank.slice(0, 50)
             }
@@ -418,10 +427,10 @@ router.post("/match", async (req, res) => {
 // ✅ 5. Get reconciliation results
 router.get("/results/:sessionId", async (req, res) => {
     try {
-        const session = await ReconciliationSession.findOne({ sessionId: req.params.sessionId });
+        const session = await ReconciliationSession.findOne({ sessionId: req.params.sessionId, userId: req.user.id });
 
         if (!session) {
-            return res.status(404).json({ message: "Session not found" });
+            return res.status(404).json({ message: "Session not found or access denied" });
         }
 
         res.json({
@@ -441,9 +450,9 @@ router.put("/manual-match", async (req, res) => {
     try {
         const { sessionId, ledgerTransaction, bankTransaction, note } = req.body;
 
-        const session = await ReconciliationSession.findOne({ sessionId });
+        const session = await ReconciliationSession.findOne({ sessionId, userId: req.user.id });
         if (!session) {
-            return res.status(404).json({ message: "Session not found" });
+            return res.status(404).json({ message: "Session not found or access denied" });
         }
 
         const manualMatch = {
@@ -469,10 +478,10 @@ router.put("/manual-match", async (req, res) => {
 router.get("/export/:sessionId", async (req, res) => {
     try {
         const { format = 'csv' } = req.query;
-        const session = await ReconciliationSession.findOne({ sessionId: req.params.sessionId });
+        const session = await ReconciliationSession.findOne({ sessionId: req.params.sessionId, userId: req.user.id });
 
         if (!session) {
-            return res.status(404).json({ message: "Session not found" });
+            return res.status(404).json({ message: "Session not found or access denied" });
         }
 
         if (format === 'csv') {
