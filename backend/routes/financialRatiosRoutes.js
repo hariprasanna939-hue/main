@@ -175,7 +175,7 @@ router.get("/generate", verifyToken, async (req, res) => {
 
     res.json({
       hasEnoughData: true,
-      companyName: companyName || latestBS.companyName || "Your Company",
+      companyName: companyName || latestBS?.companyName || "Your Company",
       period: period || `${start.getFullYear()}-${end.getFullYear()}`,
       currentAssets,
       currentLiabilities,

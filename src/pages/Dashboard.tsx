@@ -144,6 +144,8 @@ const Dashboard = () => {
   const [plGen, setPlGen] = useState<any>(null);
   const [cfGen, setCfGen] = useState<any>(null);
   const [gstAnalyticsData, setGstAnalyticsData] = useState<any>(null);
+  const [liveBalanceSheetData, setLiveBalanceSheetData] = useState<any>(null);
+  const [liveFinancialRatiosData, setLiveFinancialRatiosData] = useState<any>(null);
 
   // Modules Dynamic Data States
   const [dashboardStats, setDashboardStats] = useState<any[]>(emptyStats);
@@ -267,17 +269,21 @@ const Dashboard = () => {
           if (parsed) setAllBalanceSheets(parsed);
         }
 
-        const [statements, bookkeeping, plGenData, cfGenData, gstData] = await Promise.all([
+        const [statements, bookkeeping, plGenData, cfGenData, gstData, liveBS, liveRatios] = await Promise.all([
           readJson(`${API_BASE_URL}/cashflow-statement/all`),
           readJson(`${API_BASE_URL}/bookkeeping/all`),
           readJson(`${API_BASE_URL}/profitloss/generate?period=${selectedPeriod}`),
           readJson(`${API_BASE_URL}/cashflow-statement/generate?period=${selectedPeriod}`),
-          readJson(`${API_BASE_URL}/tax/analytics?period=${selectedPeriod}`)
+          readJson(`${API_BASE_URL}/tax/analytics?period=${selectedPeriod}`),
+          readJson(`${API_BASE_URL}/balance/generate?period=${selectedPeriod}`),
+          readJson(`${API_BASE_URL}/financial-ratios/generate?period=${selectedPeriod}`)
         ]);
 
         if (plGenData) setPlGen(plGenData);
         if (cfGenData) setCfGen(cfGenData);
         if (gstData) setGstAnalyticsData(gstData);
+        if (liveBS) setLiveBalanceSheetData(liveBS);
+        if (liveRatios) setLiveFinancialRatiosData(liveRatios);
         const cashFlowStatementData = Array.isArray(statements) ? statements : [];
         const bookkeepingEntries = Array.isArray(bookkeeping?.entries) ? bookkeeping.entries : [];
         
@@ -365,44 +371,27 @@ const Dashboard = () => {
     });
     setInvoicesList(mappedInvoices);
 
-    let matchingBS = allBalanceSheets.find(bs => isDateInPeriod(bs.createdAt, selectedPeriod));
-    if (!matchingBS && allBalanceSheets.length > 0) matchingBS = allBalanceSheets[0];
-
-    if (matchingBS) {
-      const bsCurrentAssets = matchingBS.currentAssets || 0;
-      const bsCurrentLiabilities = matchingBS.currentLiabilities || 0;
-      const bsTotalAssets = matchingBS.totalAssets || 0;
-      const bsTotalEquity = matchingBS.equity || 0;
-      const bsTotalDebt = matchingBS.totalLiabilities || 0;
-      
-      setBsSummary({ assets: bsTotalAssets, liabilities: bsTotalDebt || bsCurrentLiabilities, equity: bsTotalEquity });
-
-      let bsInventory = 0;
-      if (matchingBS.breakdown?.assets?.currentAssets) {
-        const invItem = matchingBS.breakdown.assets.currentAssets.find((item: any) => 
-          item.label?.toLowerCase().includes("inventory") || item.label?.toLowerCase().includes("stock")
-        );
-        if (invItem) bsInventory = invItem.value || 0;
-      }
-
-      const currentRatio = bsCurrentLiabilities ? bsCurrentAssets / bsCurrentLiabilities : 0;
-      const quickRatio = bsCurrentLiabilities ? (bsCurrentAssets - bsInventory) / bsCurrentLiabilities : 0;
-      const debtToEquity = bsTotalEquity ? bsTotalDebt / bsTotalEquity : 0;
-      const profVal = plSummaryData.netProfit || 0;
-      const grossMargin = revenue ? ((revenue - purchaseExpenses) / revenue) * 100 : 0;
-      const netMargin = revenue ? (profVal / revenue) * 100 : 0;
-      const roe = bsTotalEquity ? (profVal / bsTotalEquity) * 100 : 0;
-
-      setFinancialRatios([
-        { label: "Current Ratio", value: currentRatio ? currentRatio.toFixed(2) : "0.00", status: currentRatio >= 1.5 ? "Good" : "Low" },
-        { label: "Quick Ratio", value: quickRatio ? quickRatio.toFixed(2) : "0.00", status: quickRatio >= 1.0 ? "Good" : "Low" },
-        { label: "Debt to Equity", value: debtToEquity ? debtToEquity.toFixed(2) : "0.00", status: debtToEquity <= 1.5 ? "Good" : "High" },
-        { label: "Gross Margin", value: `${grossMargin.toFixed(2)}%`, status: "Good" },
-        { label: "Net Margin", value: `${netMargin.toFixed(2)}%`, status: "Good" },
-        { label: "ROE", value: `${roe.toFixed(2)}%`, status: "Good" },
-      ]);
+    if (liveBalanceSheetData) {
+      setBsSummary({
+        assets: liveBalanceSheetData.assets?.totalAssets || 0,
+        liabilities: liveBalanceSheetData.liabilities?.totalLiabilities || 0,
+        equity: liveBalanceSheetData.equity?.totalEquity || 0
+      });
     } else {
       setBsSummary({ assets: 0, liabilities: 0, equity: 0 });
+    }
+
+    if (liveFinancialRatiosData && liveFinancialRatiosData.ratios) {
+      const r = liveFinancialRatiosData.ratios;
+      setFinancialRatios([
+        { label: "Current Ratio", value: typeof r.currentRatio === "number" ? r.currentRatio.toFixed(2) : "0.00", status: r.currentRatio >= 1.5 ? "Good" : "Low" },
+        { label: "Quick Ratio", value: typeof r.quickRatio === "number" ? r.quickRatio.toFixed(2) : "0.00", status: r.quickRatio >= 1.0 ? "Good" : "Low" },
+        { label: "Debt to Equity", value: typeof r.debtToEquity === "number" ? r.debtToEquity.toFixed(2) : "0.00", status: r.debtToEquity <= 1.5 ? "Good" : "High" },
+        { label: "Gross Margin", value: `${(r.grossProfitMargin || 0).toFixed(2)}%`, status: "Good" },
+        { label: "Net Margin", value: `${(r.netProfitMargin || 0).toFixed(2)}%`, status: "Good" },
+        { label: "ROE", value: `${(r.roe || 0).toFixed(2)}%`, status: "Good" },
+      ]);
+    } else {
       setFinancialRatios([
         { label: "Current Ratio", value: "0.00", status: "Low" },
         { label: "Quick Ratio", value: "0.00", status: "Low" },
@@ -413,7 +402,7 @@ const Dashboard = () => {
       ]);
     }
 
-  }, [allInvoices, allPurchaseInvoices, allPayrolls, allBalanceSheets, selectedPeriod, allBookkeepingEntries]);
+  }, [allInvoices, allPurchaseInvoices, allPayrolls, allBalanceSheets, selectedPeriod, allBookkeepingEntries, liveBalanceSheetData, liveFinancialRatiosData]);
 
   const formatYAxis = (val: number) => {
     if (val >= 10000000) return `${(val / 10000000).toFixed(1)}Cr`;
@@ -536,20 +525,24 @@ const Dashboard = () => {
     let outflow = 0;
     let net = 0;
     
-    if (cashFlowStatements && cashFlowStatements.length > 0) {
+    if (cfGen) {
+      inflow = Number(cfGen.totalInflow || cfGen.cashFlow?.inflow || 0);
+      outflow = Number(cfGen.totalOutflow || cfGen.cashFlow?.outflow || 0);
+      net = Number(cfGen.netCashFlow || cfGen.cashFlow?.net || (inflow - outflow) || 0);
+    } else if (cashFlowStatements && cashFlowStatements.length > 0) {
       const stmt = cashFlowStatements[0];
       inflow = Number(stmt?.totalInflow || stmt?.inflow || stmt?.totalInflows || 0);
       outflow = Number(stmt?.totalOutflow || stmt?.outflow || stmt?.totalOutflows || 0);
       net = Number(stmt?.netCashFlow || stmt?.netFlow || (inflow - outflow) || 0);
     } else {
-      const lastMonthBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, "last-month"));
-      inflow = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
-      outflow = lastMonthBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
+      const bookkeepingForPeriod = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, selectedPeriod));
+      inflow = bookkeepingForPeriod.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
+      outflow = bookkeepingForPeriod.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
       net = inflow - outflow;
     }
     
     return { cfsInflow: inflow, cfsOutflow: outflow, cfsNetFlow: net };
-  }, [cashFlowStatements, allBookkeepingEntries]);
+  }, [cfGen, cashFlowStatements, allBookkeepingEntries, selectedPeriod]);
 
   const handleSignOut = () => {
     localStorage.removeItem("token");
