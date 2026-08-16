@@ -8,6 +8,11 @@ import Customer from "../models/Customer.js";
 import LedgerAccount from "../models/LedgerAccount.js";
 import BookkeepingEntry from "../models/BookkeepingEntry.js";
 import CashTransaction from "../models/CashTransaction.js";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const Tesseract = require("tesseract.js");
+const pdfParse = require("pdf-parse");
 
 const router = express.Router();
 
@@ -175,7 +180,10 @@ const processWithGemini = async (base64Data, mimeType) => {
   if (!ai) throw new Error("Gemini AI not initialized");
 
   const modelOptions = [
-    "gemini-2.5-flash-lite",  // Latest 2.5 flash lite
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-flash-lite",
     "gemini-2.0-flash-lite",
   ];
 
@@ -205,6 +213,238 @@ const processWithGemini = async (base64Data, mimeType) => {
   }
 
   throw lastError || new Error("All Gemini models failed");
+};
+
+// Helper: parse raw invoice text to 3-part CSV format (Local Fallback)
+const parseInvoiceTextToCSV = (text) => {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
+  let invoiceNumber = "";
+  let invoiceDate = "";
+  let dueDate = "";
+  let gstin = "";
+  let email = "";
+  let phone = "";
+  let vendorName = "";
+  let customerName = "";
+  
+  let subtotal = "";
+  let tax = "";
+  let grandTotal = "";
+  
+  const lineItems = [];
+  
+  // Find GSTIN, Email, Phone
+  const gstinRegex = /\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b/i;
+  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+  const phoneRegex = /(?:\+?\d{1,4}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Check GSTIN
+    if (!gstin && gstinRegex.test(line)) {
+      gstin = line.match(gstinRegex)[0];
+    }
+    // Check Email
+    if (!email && emailRegex.test(line)) {
+      email = line.match(emailRegex)[0];
+    }
+    // Check Phone
+    if (!phone && phoneRegex.test(line)) {
+      phone = line.match(phoneRegex)[0];
+    }
+    
+    // Check Invoice Number
+    if (!invoiceNumber) {
+      const invMatch = line.match(/(?:invoice|inv|bill|doc|document)(?:\s*number|\s*no|\s*#)?[:.\s\-#]+([A-Z0-9\-]+)/i);
+      if (invMatch) {
+        invoiceNumber = invMatch[1];
+      }
+    }
+    
+    // Check Invoice Date
+    if (!invoiceDate) {
+      const dateMatch = line.match(/(?:invoice\s*date|inv\s*date|date\s*of\s*issue|issue\s*date|date)[:.\s\-]+([0-9a-zA-Z\s\-\/\.,]+)/i);
+      if (dateMatch && !line.toLowerCase().includes("due")) {
+        invoiceDate = dateMatch[1].trim();
+      }
+    }
+    
+    // Check Due Date
+    if (!dueDate) {
+      const dueMatch = line.match(/(?:due\s*date|payment\s*due)[:.\s\-]+([0-9a-zA-Z\s\-\/\.,]+)/i);
+      if (dueMatch) {
+        dueDate = dueMatch[1].trim();
+      }
+    }
+    
+    // Check Customer Name / Bill To
+    if (line.toLowerCase().includes("bill to") || line.toLowerCase().includes("invoice to") || line.toLowerCase().includes("customer") || line.toLowerCase().includes("client")) {
+      if (i + 1 < lines.length) {
+        customerName = lines[i + 1].replace(/[:\-]/g, "").trim();
+      }
+    }
+    
+    // Check Subtotal
+    if (!subtotal) {
+      const subMatch = line.match(/(?:sub\s*total|subtotal|net\s*amount)[:.\s\-]+(?:rs\.?|inr|usd|[\$₹€£])?\s*([\d,]+\.?\d*)/i);
+      if (subMatch) {
+        subtotal = subMatch[1].replace(/,/g, '');
+      }
+    }
+    
+    // Check Tax
+    if (!tax) {
+      const taxMatch = line.match(/(?:gst|tax|vat|cgst|sgst|igst)(?:\s*\d+%)?\s*[:.\s\-#]+(?:rs\.?|inr|usd|[\$₹€£])?\s*([\d,]+\.?\d*)/i);
+      if (taxMatch) {
+        tax = taxMatch[1].replace(/,/g, '');
+      }
+    }
+    
+    // Check Grand Total
+    if (!grandTotal) {
+      const totalMatch = line.match(/(?:grand\s*total|total|amount\s*due|payable\s*amount)[:.\s\-]+(?:rs\.?|inr|usd|[\$₹€£])?\s*([\d,]+\.?\d*)/i);
+      if (totalMatch && !line.toLowerCase().includes("sub")) {
+        grandTotal = totalMatch[1].replace(/,/g, '');
+      }
+    }
+  }
+  
+  // Estimate Vendor Name
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    const line = lines[i];
+    if (
+      !line.toLowerCase().includes("invoice") &&
+      !line.toLowerCase().includes("bill to") &&
+      !line.toLowerCase().includes("date") &&
+      !line.toLowerCase().includes("tax") &&
+      !line.toLowerCase().includes("total") &&
+      !gstinRegex.test(line) &&
+      !emailRegex.test(line) &&
+      line.length > 3
+    ) {
+      vendorName = line;
+      break;
+    }
+  }
+  
+  // Find Line Items
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lowerLine = line.toLowerCase();
+    
+    // Skip headers and totals
+    if (
+      lowerLine.includes("invoice") || 
+      lowerLine.includes("bill to") || 
+      lowerLine.includes("date") || 
+      lowerLine.includes("total") || 
+      lowerLine.includes("subtotal") || 
+      lowerLine.includes("gstin") || 
+      lowerLine.includes("tax") ||
+      lowerLine.includes("gst") ||
+      lowerLine.includes("vat") ||
+      lowerLine.includes("cgst") ||
+      lowerLine.includes("sgst") ||
+      lowerLine.includes("igst") ||
+      lowerLine.includes("page") ||
+      lowerLine.includes("phone") ||
+      lowerLine.includes("email") ||
+      lowerLine.includes("bank") ||
+      lowerLine.includes("payment terms") ||
+      lowerLine.includes("description") ||
+      lowerLine.includes("quantity") ||
+      lowerLine.includes("rate") ||
+      lowerLine.includes("price") ||
+      lowerLine.includes("amount")
+    ) {
+      continue;
+    }
+    
+    // Pattern 1: Description Qty Price Total
+    const itemMatch1 = line.match(/^(.+?)\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)$/);
+    if (itemMatch1) {
+      lineItems.push({
+        description: itemMatch1[1].trim(),
+        qty: itemMatch1[2],
+        price: itemMatch1[3].replace(/,/g, ''),
+        total: itemMatch1[4].replace(/,/g, '')
+      });
+      continue;
+    }
+    
+    // Pattern 2: Description Total
+    const itemMatch2 = line.match(/^(.+?)\s+([\d,]+\.?\d*)$/);
+    if (itemMatch2) {
+      const desc = itemMatch2[1].trim();
+      const val = itemMatch2[2].replace(/,/g, '');
+      if (desc.length > 2 && isNaN(desc)) {
+        lineItems.push({
+          description: desc,
+          qty: "1",
+          price: val,
+          total: val
+        });
+      }
+    }
+  }
+  
+  // Format CSV
+  let csv = "PART 1 — Invoice Details\nlabel,value\n";
+  csv += `Invoice Number,${invoiceNumber}\n`;
+  csv += `Invoice Date,${invoiceDate}\n`;
+  csv += `Due Date,${dueDate}\n`;
+  csv += `Vendor Name,${vendorName}\n`;
+  csv += `Customer Name,${customerName}\n`;
+  csv += `GSTIN,${gstin}\n`;
+  csv += `Phone,${phone}\n`;
+  csv += `Email,${email}\n`;
+  
+  csv += "\nPART 2 — Line Items Table\nDescription,Quantity,Price,Total\n";
+  if (lineItems.length > 0) {
+    lineItems.forEach(item => {
+      csv += `"${item.description}",${item.qty},${item.price},${item.total}\n`;
+    });
+  } else {
+    csv += "No items found,1,0,0\n";
+  }
+  
+  csv += "\nPART 3 — Totals\nlabel,value\n";
+  csv += `Subtotal,${subtotal || grandTotal || "0"}\n`;
+  csv += `Tax,${tax || "0"}\n`;
+  csv += `Grand Total,${grandTotal || subtotal || "0"}\n`;
+  
+  return csv;
+};
+
+// Helper: process invoice with local Tesseract OCR
+const processWithLocalOCR = async (base64Data) => {
+  const imageBuffer = Buffer.from(base64Data, "base64");
+  let worker = null;
+  try {
+    worker = await Tesseract.createWorker("eng", 1);
+    const { data: { text } } = await worker.recognize(imageBuffer);
+    console.log("📝 Tesseract raw text length:", text.length);
+    return parseInvoiceTextToCSV(text);
+  } finally {
+    if (worker) {
+      await worker.terminate();
+    }
+  }
+};
+
+// Helper: process invoice with local PDF text parser
+const processLocalPDF = async (base64Data) => {
+  const pdfBuffer = Buffer.from(base64Data, "base64");
+  try {
+    const data = await pdfParse(pdfBuffer);
+    console.log("📝 pdf-parse text length:", data.text?.length || 0);
+    return parseInvoiceTextToCSV(data.text || "");
+  } catch (error) {
+    console.error("❌ pdf-parse failed:", error.message);
+    throw new Error("Failed to parse PDF text: " + error.message);
+  }
 };
 
 // POST /api/ai/invoice-ocr
@@ -240,6 +480,7 @@ router.post("/invoice-ocr", async (req, res) => {
 
     let text = null;
     let provider = null;
+    let fallbackToLocal = false;
 
     // Try Gemini first (primary)
     if (hasGemini) {
@@ -255,9 +496,13 @@ router.post("/invoice-ocr", async (req, res) => {
         if (hasOpenRouter) {
           console.log("🔄 Gemini failed, trying OpenRouter fallback...");
         } else {
-          throw geminiError; // No fallback available
+          fallbackToLocal = true;
         }
       }
+    } else if (hasOpenRouter) {
+      fallbackToLocal = false;
+    } else {
+      fallbackToLocal = true;
     }
 
     // Fallback to OpenRouter if Gemini failed or unavailable
@@ -269,7 +514,25 @@ router.post("/invoice-ocr", async (req, res) => {
         console.log("✅ OpenRouter response received");
       } catch (openRouterError) {
         console.error("❌ OpenRouter also failed:", openRouterError.message);
-        throw openRouterError;
+        fallbackToLocal = true;
+      }
+    }
+
+    // Fallback to local Tesseract OCR / PDF parser if both AI providers failed
+    if (!text && fallbackToLocal) {
+      try {
+        console.log(`🔄 AI providers failed. Falling back to local OCR (type: ${mimeType})...`);
+        if (mimeType === "application/pdf" || mimeType.includes("pdf")) {
+          text = await processLocalPDF(base64Data);
+          provider = "local-pdf-parse";
+        } else {
+          text = await processWithLocalOCR(base64Data);
+          provider = "local-tesseract";
+        }
+        console.log(`✅ Local extraction successful via ${provider}`);
+      } catch (localOcrError) {
+        console.error(`❌ Local extraction failed:`, localOcrError.message);
+        throw new Error("All AI providers and local extraction failed to process the invoice");
       }
     }
 
@@ -346,21 +609,21 @@ router.post("/extract-text", async (req, res) => {
     const hasGemini = !!process.env.GEMINI_API_KEY;
     const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
 
-    if (!hasGemini && !hasOpenRouter) {
-      return res.status(500).json({
-        success: false,
-        message: "No AI provider configured"
-      });
-    }
-
     const base64Image = image.includes('base64,') ? image.split('base64,')[1] : image;
     const extractPrompt = "Extract all text from this image. Return only the text content, preserving the layout as much as possible.";
 
     let text = null;
+    let fallbackToLocal = false;
 
     // Try Gemini first with multiple model fallbacks
     if (hasGemini) {
-      const modelOptions = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite"];
+      const modelOptions = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash-lite",
+      ];
 
       for (const modelName of modelOptions) {
         try {
@@ -381,22 +644,58 @@ router.post("/extract-text", async (req, res) => {
           continue;
         }
       }
+
+      if (!text) {
+        if (hasOpenRouter) {
+          console.log("🔄 Gemini failed, trying OpenRouter fallback...");
+        } else {
+          fallbackToLocal = true;
+        }
+      }
+    } else if (hasOpenRouter) {
+      fallbackToLocal = false;
+    } else {
+      fallbackToLocal = true;
     }
 
     // Fallback to OpenRouter
     if (!text && hasOpenRouter) {
       try {
+        console.log("🟠 Trying OpenRouter for text extraction...");
         text = await callOpenRouter(extractPrompt, base64Image, mimeType);
+        console.log("✅ OpenRouter text extraction success");
       } catch (openRouterError) {
         console.error("❌ OpenRouter text extraction failed:", openRouterError.message);
-        throw openRouterError;
+        fallbackToLocal = true;
+      }
+    }
+
+    // Fallback to local Tesseract OCR / PDF parser
+    if (!text && fallbackToLocal) {
+      try {
+        console.log(`🔄 AI providers failed for text extraction. Running local processing (type: ${mimeType})...`);
+        if (mimeType === "application/pdf" || mimeType.includes("pdf")) {
+          const pdfBuffer = Buffer.from(base64Image, "base64");
+          const pdfData = await pdfParse(pdfBuffer);
+          text = pdfData.text;
+        } else {
+          const imageBuffer = Buffer.from(base64Image, "base64");
+          const worker = await Tesseract.createWorker("eng", 1);
+          const { data: { text: localText } } = await worker.recognize(imageBuffer);
+          await worker.terminate();
+          text = localText;
+        }
+        console.log("✅ Local OCR text extraction successful");
+      } catch (localOcrError) {
+        console.error("❌ Local OCR text extraction also failed:", localOcrError.message);
+        throw new Error("All AI providers and local OCR failed to extract text from the image");
       }
     }
 
     if (!text) {
       return res.status(500).json({
         success: false,
-        message: "All AI providers failed"
+        message: "Failed to extract text from image"
       });
     }
 

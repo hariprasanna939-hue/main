@@ -24,8 +24,9 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-// ✅ Define ProfitLoss schema - UPDATED to match Python file with 8 expenses
+// ✅ Define ProfitLoss schema with tenant isolation
 const profitLossSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   companyName: { type: String },
   financialYear: { type: String },
   // Revenue fields
@@ -35,32 +36,32 @@ const profitLossSchema = new mongoose.Schema({
   otherIncome: { type: Number, required: true, default: 0 },
   totalRevenue: { type: Number, required: true, default: 0 },
   
-  // Expense fields - EXPANDED to 8 fields matching Python
-  costOfMaterials: { type: Number, required: true, default: 0 },  // NEW
+  // Expense fields
+  costOfMaterials: { type: Number, required: true, default: 0 },
   salaries: { type: Number, required: true, default: 0 },
   rent: { type: Number, required: true, default: 0 },
   utilities: { type: Number, required: true, default: 0 },
-  financeCost: { type: Number, required: true, default: 0 },      // NEW
-  depreciation: { type: Number, required: true, default: 0 },     // NEW
-  amortization: { type: Number, required: true, default: 0 },     // NEW
+  financeCost: { type: Number, required: true, default: 0 },
+  depreciation: { type: Number, required: true, default: 0 },
+  amortization: { type: Number, required: true, default: 0 },
   otherExpenses: { type: Number, required: true, default: 0 },
   totalExpenses: { type: Number, required: true, default: 0 },
   
   // Result fields
   netProfit: { type: Number, required: true, default: 0 },
-  profitMargin: { type: Number, required: true, default: 0 },     // NEW
+  profitMargin: { type: Number, required: true, default: 0 },
   profitable: { type: Boolean, required: true, default: false },
   
-  // AI Insights (store for history)
-  aiInsights: { type: [String], default: [] },                    // NEW
-  aiRecommendations: { type: [String], default: [] },             // NEW
+  // AI Insights
+  aiInsights: { type: [String], default: [] },
+  aiRecommendations: { type: [String], default: [] },
   
   createdAt: { type: Date, default: Date.now },
 });
 
 const ProfitLoss = mongoose.model("ProfitLoss", profitLossSchema);
 
-// ✅ Helper function to generate AI insights (mirrors Python logic)
+// ✅ Helper function to generate AI insights
 function generateAIInsights(revenue, expenses, netProfit, profitMargin, cogs) {
   const insights = [];
   const recommendations = [];
@@ -105,41 +106,37 @@ function generateAIInsights(revenue, expenses, netProfit, profitMargin, cogs) {
   return { insights, recommendations };
 }
 
-// ✅ POST route to store Profit & Loss data
+// ✅ POST route to store Profit & Loss data for authenticated user
 router.post("/add", async (req, res) => {
   try {
     const plData = req.body;
 
-    // Calculate total revenue
     const totalRevenue = (plData.sales || 0) + (plData.serviceIncome || 0) + 
                          (plData.interestIncome || 0) + (plData.otherIncome || 0);
     
-    // Calculate total expenses - using 8 expense fields
     const totalExpenses = (plData.costOfMaterials || 0) + (plData.salaries || 0) + 
-                          (plData.rent || 0) + (plData.utilities || 0) +
-                          (plData.financeCost || 0) + (plData.depreciation || 0) +
-                          (plData.amortization || 0) + (plData.otherExpenses || 0);
+                           (plData.rent || 0) + (plData.utilities || 0) +
+                           (plData.financeCost || 0) + (plData.depreciation || 0) +
+                           (plData.amortization || 0) + (plData.otherExpenses || 0);
     
     const netProfit = totalRevenue - totalExpenses;
     const profitMargin = (netProfit / totalRevenue * 100) || 0;
     const profitable = netProfit > 0;
     
-    // Generate AI insights
     const { insights, recommendations } = generateAIInsights(
       totalRevenue, totalExpenses, netProfit, profitMargin, plData.costOfMaterials || 0
     );
 
     const dataToSave = {
+      userId: req.user.id,
       companyName: plData.companyName || "",
       financialYear: plData.financialYear || "",
-      // Revenue
       sales: plData.sales || 0,
       serviceIncome: plData.serviceIncome || 0,
       interestIncome: plData.interestIncome || 0,
       otherIncome: plData.otherIncome || 0,
       totalRevenue: totalRevenue,
       
-      // Expenses (8 fields)
       costOfMaterials: plData.costOfMaterials || 0,
       salaries: plData.salaries || 0,
       rent: plData.rent || 0,
@@ -150,12 +147,10 @@ router.post("/add", async (req, res) => {
       otherExpenses: plData.otherExpenses || 0,
       totalExpenses: totalExpenses,
       
-      // Results
       netProfit: netProfit,
       profitMargin: profitMargin,
       profitable: profitable,
       
-      // AI data
       aiInsights: insights,
       aiRecommendations: recommendations,
     };
@@ -175,10 +170,10 @@ router.post("/add", async (req, res) => {
   }
 });
 
-// ✅ GET route to fetch all P&L records
+// ✅ GET route to fetch all P&L records for authenticated user
 router.get("/all", async (req, res) => {
   try {
-    const records = await ProfitLoss.find().sort({ createdAt: -1 });
+    const records = await ProfitLoss.find({ userId: req.user.id }).sort({ createdAt: -1 });
     res.json(records);
   } catch (error) {
     console.error("❌ Error fetching P&L data:", error);
@@ -186,10 +181,11 @@ router.get("/all", async (req, res) => {
   }
 });
 
-// ✅ GET route to fetch P&L summary
+// ✅ GET route to fetch P&L summary for authenticated user
 router.get("/summary", async (req, res) => {
   try {
     const summary = await ProfitLoss.aggregate([
+      { $match: { userId: new mongoose.Types.ObjectId(req.user.id) } },
       {
         $group: {
           _id: null,
@@ -212,12 +208,12 @@ router.get("/summary", async (req, res) => {
   }
 });
 
-// ✅ NEW: GET route to fetch AI insights for a specific record
+// ✅ GET route to fetch AI insights for a specific record for authenticated user
 router.get("/insights/:id", async (req, res) => {
   try {
-    const record = await ProfitLoss.findById(req.params.id);
+    const record = await ProfitLoss.findOne({ _id: req.params.id, userId: req.user.id });
     if (!record) {
-      return res.status(404).json({ message: "Record not found" });
+      return res.status(404).json({ message: "Record not found or access denied" });
     }
     res.json({
       insights: record.aiInsights,
@@ -232,7 +228,7 @@ router.get("/insights/:id", async (req, res) => {
 });
 
 // ✅ GET route to dynamically generate Profit & Loss statement based on all modules
-router.get("/generate", verifyToken, async (req, res) => {
+router.get("/generate", async (req, res) => {
   try {
     const { period, startDate: startQuery, endDate: endQuery, companyName, financialYear } = req.query;
     let start, end;
@@ -252,7 +248,6 @@ router.get("/generate", verifyToken, async (req, res) => {
 
     const metrics = await getFinanceMetrics(req.user.id, start, end);
 
-    // Call generateAIInsights using aggregated metrics
     const { insights, recommendations } = generateAIInsights(
       metrics.revenue.total,
       metrics.expense.total,
@@ -264,13 +259,12 @@ router.get("/generate", verifyToken, async (req, res) => {
     res.json({
       companyName: companyName || "Your Company",
       financialYear: financialYear || `${start.getFullYear()}-${end.getFullYear()}`,
-      // Revenue
       sales: metrics.revenue.sales,
       serviceIncome: 0,
       interestIncome: 0,
       otherIncome: metrics.revenue.bookkeepingIncome + metrics.revenue.inventorySales,
       totalRevenue: metrics.revenue.total,
-      // Expenses (8 fields)
+      
       costOfMaterials: metrics.expense.costOfMaterials + metrics.expense.cogs,
       salaries: metrics.expense.salaries,
       rent: metrics.expense.rent,
@@ -280,7 +274,7 @@ router.get("/generate", verifyToken, async (req, res) => {
       amortization: metrics.expense.amortization,
       otherExpenses: metrics.expense.otherExpenses,
       totalExpenses: metrics.expense.total,
-      // Results
+      
       netProfit: metrics.netProfit,
       profitMargin: metrics.profitMargin,
       profitable: metrics.netProfit > 0,

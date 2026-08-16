@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { VoiceButton } from "@/components/ui/VoiceButton";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -41,7 +41,8 @@ import {
   Wallet,
   AlertCircle,
   Share2,
-  Save
+  Save,
+  Layout
 } from "lucide-react";
 import { parseVoiceInvoiceText, parseInvoiceText } from "@/lib/voiceInvoiceParser";
 import { API_ENDPOINTS, API_BASE_URL } from "@/lib/api";
@@ -54,7 +55,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { jsPDF } from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 
 // Indian States for GST
 const INDIAN_STATES = [
@@ -117,7 +118,7 @@ const BUSINESS_STATE = "Tamil Nadu";
 // Invoice Data interface
 interface InvoiceData {
   type: 'sales' | 'purchase';
-  saleType: 'credit' | 'cash' | 'gpay' | 'netbanking';
+  saleType: 'credit' | 'cash' | 'UPI' | 'Net Banking';
   partyName: string;
   phoneNo: string;
   sellerName: string;
@@ -146,6 +147,19 @@ interface InvoiceData {
   customerEmail?: string;
   customerGSTIN?: string;
   ocrJson?: unknown;
+  orderNumber?: string;
+  salespersonName?: string;
+  currency?: string;
+  exchangeRate?: number;
+  shippingCharges?: number;
+  packagingCharges?: number;
+  freightCharges?: number;
+  adjustment?: number;
+  dueDate?: string;
+  paymentTerms?: string;
+  sellerEmail?: string;
+  sellerAddress?: string;
+  customerAddress?: string;
 }
 
 // Inventory Item interface (from Inventory Management)
@@ -326,7 +340,20 @@ const AutomationInvoice = () => {
     paymentMethod: 'cash',
     uploadedBill: null,
     customerEmail: '',
-    customerGSTIN: ''
+    customerGSTIN: '',
+    orderNumber: '',
+    salespersonName: '',
+    currency: 'INR',
+    exchangeRate: 1,
+    shippingCharges: 0,
+    packagingCharges: 0,
+    freightCharges: 0,
+    adjustment: 0,
+    dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    paymentTerms: 'Due on Receipt',
+    sellerEmail: '',
+    sellerAddress: '',
+    customerAddress: ''
   });
 
   // New item form state
@@ -350,6 +377,104 @@ const AutomationInvoice = () => {
   // State for invoice history
   const [invoiceHistory, setInvoiceHistory] = useState<InvoiceData[]>([]);
 
+  // State for invoice templates theme selection
+  const [userTemplates, setUserTemplates] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+
+  const activeTemplateConfig = useMemo(() => {
+    const active = userTemplates.find((t: any) => t._id === selectedTemplateId);
+    if (active?.config) return active.config;
+    
+    // Default initialConfig structure
+    return {
+      header: { showLogo: true, logoPosition: "left", logoSize: "medium", logoUrl: "", showCompanyName: true, showAddress: true, showPhone: true, showEmail: true },
+      seller: { showName: true, showPhone: true, showEmail: true, showGSTIN: true, showAddress: true },
+      customer: { showName: true, showGSTIN: true, showPhone: true, showEmail: true, showBillingAddress: true, showShippingAddress: true, showPlaceOfSupply: true },
+      invoiceInfo: {
+        showInvoiceNumber: true, showInvoiceDate: true, showDueDate: true, showPaymentTerms: true, showOrderNumber: true, showSalesperson: true,
+        labels: { invoiceNumber: "Invoice No.", invoiceDate: "Invoice Date", dueDate: "Due Date", paymentTerms: "Payment Terms", orderNumber: "Order No.", salespersonName: "Salesperson" }
+      },
+      items: {
+        columns: ["item", "hsn", "quantity", "rate", "tax", "amount"],
+        labels: { item: "Item", description: "Description", sku: "SKU", hsn: "HSN/SAC", quantity: "Qty", rate: "Rate", tax: "Tax", amount: "Amount" }
+      },
+      tax: { showSummary: true, showCGST: true, showSGST: true, showIGST: true, showTaxableAmount: true, showTotalTax: true },
+      payment: { showPaidAmount: true, showBalance: true, showPaymentMethod: true },
+      notes: { show: true, label: "Notes", defaultText: "Thank you for your business!" },
+      terms: { show: true, label: "Terms & Conditions", defaultText: "Payment is due within 15 days of invoice date." },
+      signature: { show: false, name: "", designation: "", imageUrl: "" },
+      footer: { show: true, text: "" },
+      design: { primaryColor: "#4f46e5", secondaryColor: "#f8fafc", textColor: "#0f172a", backgroundColor: "#ffffff", borderColor: "#cbd5e1", fontFamily: "Inter", fontSize: 12, borderStyle: "light" },
+      sectionsOrder: ["header", "seller", "customer", "invoiceInfo", "items", "tax", "payment", "notes", "signature", "footer"]
+    };
+  }, [userTemplates, selectedTemplateId]);
+
+  const fetchUserTemplates = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error("Session expired. Please log in again.");
+        navigate("/auth");
+        return;
+      }
+      const res = await fetch(`${API_BASE_URL}/invoice-templates`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.status === 401 || res.status === 400) {
+        // Token expired or invalid — clear it and redirect
+        localStorage.removeItem("token");
+        toast.error("Session expired. Please log in again.");
+        navigate("/auth");
+        return;
+      }
+      if (res.ok) {
+        const result = await res.json();
+        const list = result.data || [];
+        setUserTemplates(list);
+        const def = list.find((t: any) => t.isDefault);
+        if (def) {
+          setSelectedTemplateId(def._id);
+          setCurrentInvoice(prev => ({ ...prev, templateId: def._id }));
+        } else if (list.length > 0) {
+          setSelectedTemplateId(list[0]._id);
+          setCurrentInvoice(prev => ({ ...prev, templateId: list[0]._id }));
+        }
+      }
+    } catch (err) {
+      console.error("Error loading user templates:", err);
+    }
+  };
+
+  const fetchUserProfile = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      
+      const res = await fetch(`${API_BASE_URL}/user`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentInvoice(prev => ({
+          ...prev,
+          sellerName: data.sellerName || prev.sellerName || "",
+          sellerPhone: data.sellerPhone || prev.sellerPhone || "",
+          sellerEmail: data.sellerEmail || prev.sellerEmail || "",
+          sellerGSTIN: data.sellerGSTIN || prev.sellerGSTIN || "",
+          businessState: data.sellerState || prev.businessState || "Tamil Nadu",
+          sellerAddress: data.sellerAddress || prev.sellerAddress || ""
+        }));
+      }
+    } catch (err) {
+      console.error("Error loading user profile details:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserTemplates();
+    fetchUserProfile();
+  }, []);
+
   // State for OCR
   const [ocrText, setOcrText] = useState("");
   const [ocrProgress, setOcrProgress] = useState(0);
@@ -368,11 +493,216 @@ const AutomationInvoice = () => {
   // Search state for history
   const [searchTerm, setSearchTerm] = useState("");
 
+  // Customers list and suggestions
+  const [customersList, setCustomersList] = useState<any[]>([]);
+  const [customerSearchTerm, setCustomerSearchTerm] = useState("");
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+
+  // New customer inline form state
+  const [newCustomerForm, setNewCustomerForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    billingAddress: "",
+    shippingAddress: "",
+    gstin: "",
+    placeOfSupply: "",
+    paymentTerms: "Due on Receipt"
+  });
+
+  // Record Manual Payment State
+  const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: 0,
+    paymentDate: new Date().toISOString().split('T')[0],
+    paymentMethod: "cash",
+    depositAccount: "Cash/Bank",
+    referenceNumber: "",
+    notes: ""
+  });
+
   // Inventory stock items state
   const [inventoryItems, setInventoryItems] = useState<InventoryStockItem[]>([]);
   const [inventorySearchTerm, setInventorySearchTerm] = useState("");
   const [isInventoryDropdownOpen, setIsInventoryDropdownOpen] = useState(false);
   const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+
+  // Fetch customers from backend
+  const fetchCustomers = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE_URL}/customers`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCustomersList(data);
+      }
+    } catch (error) {
+      console.error("Error fetching customers:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
+
+  // Inline Customer Create
+  const handleCreateCustomer = async () => {
+    if (!newCustomerForm.name.trim()) {
+      toast.error("Customer name is required");
+      return;
+    }
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE_URL}/customers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(newCustomerForm)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success("Customer created successfully!");
+        setCurrentInvoice(prev => ({
+          ...prev,
+          partyName: data.customer.name,
+          phoneNo: data.customer.phone || prev.phoneNo,
+          customerEmail: data.customer.email || prev.customerEmail,
+          customerGSTIN: data.customer.gstin || prev.customerGSTIN,
+          stateOfSupply: data.customer.placeOfSupply || prev.stateOfSupply,
+          customerAddress: data.customer.billingAddress || prev.customerAddress
+        }));
+        setNewCustomerForm({
+          name: "",
+          email: "",
+          phone: "",
+          billingAddress: "",
+          shippingAddress: "",
+          gstin: "",
+          placeOfSupply: "",
+          paymentTerms: "Due on Receipt"
+        });
+        setIsAddCustomerOpen(false);
+        fetchCustomers();
+      } else {
+        const err = await res.json();
+        toast.error(err.message || "Failed to create customer");
+      }
+    } catch (error) {
+      console.error("Error adding customer:", error);
+      toast.error("Error adding customer inline");
+    }
+  };
+
+  // Record Manual Payment
+  const handleRecordPaymentSubmit = async () => {
+    if (!lastSavedId) {
+      toast.error("Please save the invoice first before recording payments.");
+      return;
+    }
+    if (paymentForm.amount <= 0) {
+      toast.error("Payment amount must be greater than zero.");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE_URL}/invoice/${lastSavedId}/payment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(paymentForm)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        toast.success("Payment recorded successfully!");
+        const updated = data.invoice;
+        setCurrentInvoice(prev => ({
+          ...prev,
+          paid: updated.amountPaid,
+          balance: updated.balanceDue,
+          paymentStatus: updated.paymentStatus,
+          status: updated.status
+        }));
+        setIsRecordPaymentOpen(false);
+        
+        // Refresh local history
+        const savedList = JSON.parse(localStorage.getItem('savedInvoices') || '[]');
+        const idx = savedList.findIndex((inv: any) => inv.id === lastSavedId);
+        if (idx !== -1) {
+          savedList[idx].paid = updated.amountPaid;
+          savedList[idx].balance = updated.balanceDue;
+          savedList[idx].status = updated.status;
+          localStorage.setItem('savedInvoices', JSON.stringify(savedList));
+          setInvoiceHistory(savedList);
+        }
+      } else {
+        const err = await res.json();
+        toast.error(err.message || "Failed to record payment");
+      }
+    } catch (error) {
+      console.error("Error recording payment:", error);
+      toast.error("Error recording payment");
+    }
+  };
+
+  // Cancel / Reverse Invoice
+  const handleCancelInvoice = async () => {
+    if (!lastSavedId) {
+      toast.error("Please save the invoice first.");
+      return;
+    }
+    if (!confirm("Are you sure you want to cancel this invoice? This will reverse all ledger entries and restore stock!")) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE_URL}/invoice/${lastSavedId}/cancel`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        toast.success("Invoice cancelled and reversed successfully!");
+        const updated = data.invoice;
+        setCurrentInvoice(prev => ({
+          ...prev,
+          status: updated.status,
+          paymentStatus: updated.paymentStatus,
+          paid: updated.amountPaid,
+          balance: updated.balanceDue
+        }));
+        
+        // Refresh local history
+        const savedList = JSON.parse(localStorage.getItem('savedInvoices') || '[]');
+        const idx = savedList.findIndex((inv: any) => inv.id === lastSavedId);
+        if (idx !== -1) {
+          savedList[idx].paid = updated.amountPaid;
+          savedList[idx].balance = updated.balanceDue;
+          savedList[idx].status = updated.status;
+          localStorage.setItem('savedInvoices', JSON.stringify(savedList));
+          setInvoiceHistory(savedList);
+        }
+      } else {
+        const err = await res.json();
+        toast.error(err.message || "Failed to cancel invoice");
+      }
+    } catch (error) {
+      console.error("Error cancelling invoice:", error);
+      toast.error("Error cancelling invoice");
+    }
+  };
 
   // Fetch inventory items on mount
   useEffect(() => {
@@ -405,19 +735,8 @@ const AutomationInvoice = () => {
     const loadInvoices = async () => {
       let mergedInvoices: InvoiceData[] = [];
 
-      // Get authenticated user ID for scoped localStorage
-      const currentUser = localStorage.getItem("user");
-      let userId = "guest";
-      if (currentUser) {
-        try {
-          const userObj = JSON.parse(currentUser);
-          userId = userObj.id || userObj._id || "guest";
-        } catch (e) {}
-      }
-      const storageKey = `savedInvoices_${userId}`;
-
-      // Load from localStorage (user-scoped)
-      const saved = localStorage.getItem(storageKey);
+      // Load from localStorage
+      const saved = localStorage.getItem('savedInvoices');
       if (saved) {
         try {
           mergedInvoices = JSON.parse(saved);
@@ -429,12 +748,11 @@ const AutomationInvoice = () => {
       // Load from backend
       try {
         const token = localStorage.getItem("token");
-        const headers: Record<string, string> = {};
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-
-        const response = await fetch(`${API_BASE_URL}/invoice/all?limit=100`, { headers });
+        const response = await fetch(`${API_BASE_URL}/invoice/all?limit=100`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
         if (response.ok) {
           const data = await response.json();
           if (data.invoices && Array.isArray(data.invoices)) {
@@ -597,13 +915,20 @@ const AutomationInvoice = () => {
   };
 
   // Calculate invoice totals from items
-  const calculateInvoiceTotals = (items: InvoiceItem[]) => {
+  const calculateInvoiceTotals = (
+    items: InvoiceItem[],
+    shipping = currentInvoice.shippingCharges || 0,
+    packaging = currentInvoice.packagingCharges || 0,
+    freight = currentInvoice.freightCharges || 0,
+    adjustment = currentInvoice.adjustment || 0
+  ) => {
     const subtotal = items.reduce((sum, i) => sum + (i.quantity * i.pricePerUnit) - i.discountAmount, 0);
     const totalSgst = items.reduce((sum, i) => sum + i.sgstAmount, 0);
     const totalCgst = items.reduce((sum, i) => sum + i.cgstAmount, 0);
     const totalIgst = items.reduce((sum, i) => sum + i.igstAmount, 0);
     const totalTax = totalSgst + totalCgst + totalIgst;
-    const total = items.reduce((sum, i) => sum + i.amount, 0);
+    const itemsTotal = items.reduce((sum, i) => sum + i.amount, 0);
+    const total = itemsTotal + shipping + packaging + freight + adjustment;
 
     return {
       subtotal: Math.round(subtotal * 100) / 100,
@@ -733,7 +1058,13 @@ const AutomationInvoice = () => {
     };
 
     const updatedItems = [...currentInvoice.items, item];
-    const totals = calculateInvoiceTotals(updatedItems);
+    const totals = calculateInvoiceTotals(
+      updatedItems,
+      currentInvoice.shippingCharges,
+      currentInvoice.packagingCharges,
+      currentInvoice.freightCharges,
+      currentInvoice.adjustment
+    );
 
     setLastSavedId(null);
     setCurrentInvoice(prev => ({
@@ -839,7 +1170,13 @@ const AutomationInvoice = () => {
 
     setLastSavedId(null);
     const updatedItems = currentInvoice.items.filter(i => i.id !== itemId);
-    const totals = calculateInvoiceTotals(updatedItems);
+    const totals = calculateInvoiceTotals(
+      updatedItems,
+      currentInvoice.shippingCharges,
+      currentInvoice.packagingCharges,
+      currentInvoice.freightCharges,
+      currentInvoice.adjustment
+    );
 
     setCurrentInvoice(prev => ({
       ...prev,
@@ -877,7 +1214,7 @@ const AutomationInvoice = () => {
 
   // Save invoice
   // Save invoice
-  const saveInvoice = async () => {
+  const saveInvoice = async (statusOverride?: 'draft' | 'sent') => {
     if (currentInvoice.items.length === 0) {
       toast.error("Please add at least one item to the invoice.");
       return;
@@ -891,20 +1228,28 @@ const AutomationInvoice = () => {
     setIsSaving(true);
 
     try {
+      const statusValue = statusOverride || (currentInvoice.balance <= 0 ? 'paid' : 'sent');
       const dueReminderDate = getDueReminderDate(currentInvoice.invoiceDate, currentInvoice.dueReminderDays);
       // 1. Save to Backend to get a real ID for sharing
       const backendData = {
         invoiceNumber: currentInvoice.invoiceNo,
         invoiceDate: currentInvoice.invoiceDate,
-        dueDate: new Date(new Date(currentInvoice.invoiceDate).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        dueDate: currentInvoice.dueDate || new Date(new Date(currentInvoice.invoiceDate).getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        paymentTerms: currentInvoice.paymentTerms || 'Due on Receipt',
+        orderNumber: currentInvoice.orderNumber || '',
+        salespersonName: currentInvoice.salespersonName || '',
+        currency: currentInvoice.currency || 'INR',
+        exchangeRate: currentInvoice.exchangeRate || 1,
         customerName: currentInvoice.partyName,
-        customerEmail: currentInvoice.customerEmail || `${currentInvoice.partyName.toLowerCase().replace(/\s/g, '')}@example.com`,
+        customerEmail: currentInvoice.customerEmail || `customer@finsmart.in`,
         customerPhone: currentInvoice.phoneNo,
         customerGSTIN: currentInvoice.customerGSTIN,
+        customerAddress: currentInvoice.customerAddress || '',
         businessName: currentInvoice.sellerName || COMPANY_NAME,
-        businessEmail: COMPANY_EMAIL,
+        businessEmail: currentInvoice.sellerEmail || COMPANY_EMAIL,
         businessPhone: currentInvoice.sellerPhone,
         businessGSTIN: currentInvoice.sellerGSTIN,
+        businessAddress: currentInvoice.sellerAddress || '',
         transactionType: currentInvoice.transactionType,
         invoiceSize: currentInvoice.invoiceSize,
         dueReminderDays: currentInvoice.dueReminderDays,
@@ -926,74 +1271,51 @@ const AutomationInvoice = () => {
           discount: item.discountAmount,
           total: item.amount
         })),
-        subtotal: currentInvoice.total - currentInvoice.items.reduce((sum, item) => sum + item.taxAmount, 0),
-        taxAmount: currentInvoice.items.reduce((sum, item) => sum + item.taxAmount, 0),
-        // GST Breakdown
-        sgst: currentInvoice.items.reduce((sum, item) => sum + item.sgstAmount, 0),
-        cgst: currentInvoice.items.reduce((sum, item) => sum + item.cgstAmount, 0),
-        igst: currentInvoice.items.reduce((sum, item) => sum + item.igstAmount, 0),
+        shippingCharges: currentInvoice.shippingCharges || 0,
+        packagingCharges: currentInvoice.packagingCharges || 0,
+        freightCharges: currentInvoice.freightCharges || 0,
+        adjustment: currentInvoice.adjustment || 0,
+        subtotal: currentInvoice.subtotal,
+        taxAmount: currentInvoice.totalTax,
+        sgst: currentInvoice.totalSgst,
+        cgst: currentInvoice.totalCgst,
+        igst: currentInvoice.totalIgst,
         grandTotal: currentInvoice.total,
         amountPaid: currentInvoice.paid,
         balanceDue: currentInvoice.balance,
         paymentMethod: currentInvoice.saleType || 'cash',
         gstPortalJson: buildGstPortalJson({ ...currentInvoice, dueReminderDate }),
-        status: currentInvoice.balance <= 0 ? 'paid' : 'sent'
+        status: statusValue,
+        // ✅ Snapshot the currently active template design so the public view matches exactly
+        templateId: selectedTemplateId || undefined,
+        templateSnapshot: activeTemplateConfig
       };
 
       let backendId = '';
       try {
         const token = localStorage.getItem("token");
-        const isPurchase = currentInvoice.type === 'purchase';
-        const url = isPurchase 
-          ? `${API_BASE_URL}/purchase-invoice/create`
-          : `${API_ENDPOINTS.INVOICE}/create`;
-
-        const bodyData = isPurchase
-          ? {
-              supplierName: currentInvoice.partyName,
-              billNo: currentInvoice.invoiceNo,
-              billDate: currentInvoice.invoiceDate,
-              paymentMethod: currentInvoice.saleType === 'cash' ? 'Cash' : 'Credit',
-              stateOfSupply: currentInvoice.stateOfSupply || 'Tamil Nadu',
-              items: currentInvoice.items.map(item => ({
-                itemName: item.itemName,
-                itemCode: item.itemCode,
-                quantity: item.quantity,
-                pricePerUnit: item.pricePerUnit,
-                amount: item.amount,
-                taxPercent: item.taxPercent,
-                discountPercent: item.discountPercent
-              })),
-              subtotal: currentInvoice.subtotal,
-              totalTax: currentInvoice.totalTax,
-              total: currentInvoice.total,
-              paid: currentInvoice.paid,
-              balance: currentInvoice.balance
-            }
-          : backendData;
-
-        const response = await fetch(url, {
+        const response = await fetch(`${API_ENDPOINTS.INVOICE}/create`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify(bodyData)
+          body: JSON.stringify(backendData)
         });
         const result = await response.json();
         if (response.ok) {
           backendId = result.invoiceId || result.invoice?._id;
           setLastSavedId(backendId);
         } else {
-          toast.error(result.message || `Failed to save ${isPurchase ? 'purchase bill' : 'invoice'} to server.`);
+          toast.error(result.message || "Failed to save invoice to server. Try changing the invoice number.");
           setIsSaving(false);
-          return;
+          return null;
         }
       } catch (err) {
         console.warn("Backend save failed:", err);
         toast.error("Failed to connect to the server. Please check your network.");
         setIsSaving(false);
-        return;
+        return null;
       }
 
       // 2. Save to localStorage
@@ -1010,11 +1332,11 @@ const AutomationInvoice = () => {
       setInvoiceHistory(savedList);
 
       toast.success(`${currentInvoice.type === 'sales' ? 'Invoice' : 'Purchase Bill'} saved! You can now share on WhatsApp.`);
-
-      // Don't reset form - keep data visible until WhatsApp share or Save & New
+      return backendId;
     } catch (error: any) {
       console.error("Save Error:", error);
       toast.error(`Error saving invoice: ${error.message}`);
+      return null;
     } finally {
       setIsSaving(false);
     }
@@ -1118,154 +1440,464 @@ const AutomationInvoice = () => {
       const sellerName = data.sellerName || COMPANY_NAME;
       const customerName = data.partyName || 'Valued Customer';
 
-      // Header Banner
-      doc.setFillColor(79, 70, 229); // Indigo banner
-      doc.rect(0, 0, 210, 38, 'F');
-
-      // Invoice Title & Company Info
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(22);
-      doc.text(sellerName, 15, 18);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      const sellerInfo = [
-        data.sellerPhone ? `Phone: ${data.sellerPhone}` : '',
-        data.sellerGSTIN ? `GSTIN: ${data.sellerGSTIN}` : ''
-      ].filter(Boolean).join(' | ');
-      doc.text(sellerInfo, 15, 26);
-
-      // TAX INVOICE label
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.text("TAX INVOICE", 150, 18);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.text(`Invoice No: #${data.invoiceNo}`, 150, 26);
-      doc.text(`Date: ${data.invoiceDate}`, 150, 32);
-
-      // Billing details block
-      doc.setTextColor(15, 23, 42);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("BILL TO:", 15, 52);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Customer Name: ${customerName}`, 15, 58);
-      if (data.phoneNo) doc.text(`Phone: ${data.phoneNo}`, 15, 64);
-      if (data.customerGSTIN) doc.text(`GSTIN: ${data.customerGSTIN}`, 15, 70);
-      if (data.stateOfSupply) doc.text(`State of Supply: ${data.stateOfSupply}`, 15, 76);
-
-      // Payment mode on the right
-      doc.setFont("helvetica", "bold");
-      doc.text("PAYMENT SUMMARY:", 120, 52);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Payment Mode: ${data.saleType?.toUpperCase() || 'CASH'}`, 120, 58);
-      doc.text(`Transaction Type: ${data.transactionType || 'B2C'}`, 120, 64);
-      if (data.eWayBillNo) doc.text(`E-Way Bill: ${data.eWayBillNo}`, 120, 70);
-
-      // Draw horizontal line
-      doc.setDrawColor(226, 232, 240); // Slate 200
-      doc.line(15, 82, 195, 82);
-
-      // Items Table using autoTable
-      const tableBody = data.items.map((item, index) => [
-        index + 1,
-        item.itemName,
-        item.hsnCode || item.itemCode || '-',
-        item.quantity,
-        item.unit,
-        `INR ${item.pricePerUnit.toFixed(2)}`,
-        item.discountAmount > 0 ? `INR ${item.discountAmount.toFixed(2)}` : '0.00',
-        item.taxAmount > 0 ? `${item.taxPercent}%` : '0%',
-        `INR ${item.amount.toFixed(2)}`
-      ]);
-
-      (doc as any).autoTable({
-        startY: 88,
-        head: [['#', 'Item Description', 'HSN/SKU', 'Qty', 'Unit', 'Price/Unit', 'Discount', 'Tax Rate', 'Amount']],
-        body: tableBody,
-        theme: 'striped',
-        headStyles: {
-          fillColor: [79, 70, 229], // Indigo
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          fontSize: 9
+      // Safe default configuration fallback
+      const initialConfig = {
+        header: { showLogo: true, logoPosition: "left" as const, logoSize: "medium" as const, logoUrl: "", showCompanyName: true, showAddress: true, showPhone: true, showEmail: true },
+        seller: { showName: true, showPhone: true, showEmail: true, showGSTIN: true, showAddress: true },
+        customer: { showName: true, showGSTIN: true, showPhone: true, showEmail: true, showBillingAddress: true, showShippingAddress: true, showPlaceOfSupply: true },
+        invoiceInfo: {
+          showInvoiceNumber: true, showInvoiceDate: true, showDueDate: true, showPaymentTerms: true, showOrderNumber: true, showSalesperson: true,
+          labels: { invoiceNumber: "Invoice No.", invoiceDate: "Invoice Date", dueDate: "Due Date", paymentTerms: "Payment Terms", orderNumber: "Order No.", salespersonName: "Salesperson" }
         },
-        bodyStyles: {
-          textColor: [15, 23, 42],
-          fontSize: 9
+        items: {
+          columns: ["item", "hsn", "quantity", "rate", "tax", "amount"],
+          labels: { item: "Item", description: "Description", sku: "SKU", hsn: "HSN/SAC", quantity: "Qty", rate: "Rate", tax: "Tax", amount: "Amount" }
         },
-        columnStyles: {
-          1: { cellWidth: 40 },
-          5: { halign: 'right' },
-          6: { halign: 'right' },
-          7: { halign: 'center' },
-          8: { halign: 'right' }
+        tax: { showSummary: true, showCGST: true, showSGST: true, showIGST: true, showTaxableAmount: true, showTotalTax: true },
+        payment: { showPaidAmount: true, showBalance: true, showPaymentMethod: true },
+        notes: { show: true, label: "Notes", defaultText: "Thank you for your business!" },
+        terms: { show: true, label: "Terms & Conditions", defaultText: "Payment is due within 15 days of invoice date." },
+        signature: { show: false, name: "", designation: "", imageUrl: "" },
+        footer: { show: true, text: "" },
+        design: { primaryColor: "#4f46e5", secondaryColor: "#f8fafc", textColor: "#0f172a", backgroundColor: "#ffffff", borderColor: "#cbd5e1", fontFamily: "Inter", fontSize: 12, borderStyle: "light" as const },
+        sectionsOrder: ["header", "seller", "customer", "invoiceInfo", "items", "tax", "payment", "notes", "signature", "footer"]
+      };
+
+      // Resolve active template config — prefer snapshot, then selected template, then defaults
+      const config = (data as any).templateSnapshot
+        || (userTemplates.find((t: any) => t._id === selectedTemplateId)?.config)
+        || initialConfig;
+
+      const header   = config.header   || initialConfig.header;
+      const seller   = config.seller   || initialConfig.seller;
+      const customer = config.customer || initialConfig.customer;
+      const invoiceInfo = config.invoiceInfo || initialConfig.invoiceInfo;
+      const itemsCfg = config.items   || initialConfig.items;
+      const tax      = config.tax     || initialConfig.tax;
+      const payment  = config.payment || initialConfig.payment;
+      const notes    = config.notes   || initialConfig.notes;
+      const terms    = config.terms   || initialConfig.terms;
+      const signature = config.signature || initialConfig.signature;
+      const footer   = config.footer  || initialConfig.footer;
+      const design   = config.design  || initialConfig.design;
+      const sectionsOrder = config.sectionsOrder || initialConfig.sectionsOrder;
+
+      // Hex to RGB parser helper
+      const hexToRgb = (hex: string): [number, number, number] => {
+        const clean = (hex || "#4f46e5").replace("#", "");
+        const num = parseInt(clean.padEnd(6, "0"), 16);
+        return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+      };
+      const primaryRgb = hexToRgb(design.primaryColor || "#4f46e5");
+
+      let currentY = 15;
+
+      // Loop through all sections dynamically to respect user-ordered sequence
+      sectionsOrder.forEach((sectionName: string) => {
+        // Enforce page breaks dynamically if layout overflows vertical A4 height (297mm)
+        if (currentY > 250 && sectionName !== "footer") {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        if (sectionName === "header") {
+          // Plain white background
+          doc.setFillColor(255, 255, 255);
+          doc.rect(0, currentY, 210, 35, 'F');
+          
+          let logoX = 15;
+          if (header.showLogo && header.logoUrl) {
+            try {
+              doc.addImage(header.logoUrl, 'PNG', logoX, currentY + 2, 35, 15);
+            } catch (err) {
+              console.warn("Logo failed to load in PDF:", err);
+            }
+          } else {
+            // Draw placeholder dotted-like border
+            doc.setDrawColor(200, 200, 200);
+            doc.setLineDashPattern([2, 2], 0);
+            doc.rect(logoX, currentY + 2, 35, 15);
+            doc.setLineDashPattern([], 0); // reset
+            doc.setTextColor(150, 150, 150);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.text("[ Company Logo ]", logoX + 6, currentY + 10);
+          }
+
+          // Company info on the right
+          doc.setTextColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(18);
+          
+          if (header.showCompanyName) {
+            doc.text(sellerName.toUpperCase(), 195, currentY + 8, { align: "right" });
+          }
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 116, 139); // slate-500
+          
+          let headerY = currentY + 13;
+          if (header.showAddress && data.sellerAddress) {
+            const addrLines = doc.splitTextToSize(data.sellerAddress, 100);
+            addrLines.forEach((line: string) => {
+              doc.text(line, 195, headerY, { align: "right" });
+              headerY += 4;
+            });
+          }
+          if (header.showPhone && data.sellerPhone) {
+            doc.text(`Phone: ${data.sellerPhone}`, 195, headerY, { align: "right" });
+            headerY += 4;
+          }
+          if (header.showEmail && data.sellerEmail) {
+            doc.text(`Email: ${data.sellerEmail}`, 195, headerY, { align: "right" });
+          }
+
+          currentY = Math.max(headerY + 8, currentY + 30);
+        }
+
+        else if (sectionName === "seller" && seller.showName) {
+          // Draw rounded background container
+          const boxHeight = 35;
+          doc.setFillColor(248, 250, 252); // slate-50
+          doc.setDrawColor(226, 232, 240); // slate-200
+          doc.roundedRect(15, currentY, 180, boxHeight, 3, 3, 'FD');
+
+          doc.setTextColor(100, 116, 139); // slate-500
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.text("SELLER DETAILS", 20, currentY + 6);
+
+          doc.setTextColor(15, 23, 42); // slate-900
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.text(sellerName, 20, currentY + 13);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(71, 85, 105); // slate-600
+          let sellY = currentY + 18;
+          if (seller.showAddress && data.sellerAddress) {
+            const addrLines = doc.splitTextToSize(data.sellerAddress, 170);
+            addrLines.forEach((line: string) => {
+              doc.text(line, 20, sellY);
+              sellY += 4;
+            });
+          }
+          
+          let contactParts = [];
+          if (seller.showPhone && data.sellerPhone) contactParts.push(`Phone: ${data.sellerPhone}`);
+          if (seller.showEmail && data.sellerEmail) contactParts.push(`Email: ${data.sellerEmail}`);
+          if (contactParts.length > 0) {
+            doc.text(contactParts.join("   |   "), 20, sellY);
+            sellY += 4.5;
+          }
+
+          if (seller.showGSTIN && data.sellerGSTIN) {
+            doc.setTextColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+            doc.setFont("helvetica", "bold");
+            doc.text(`GSTIN: ${data.sellerGSTIN}`, 20, sellY);
+          }
+
+          currentY += boxHeight + 8;
+        }
+
+        else if (sectionName === "customer" && customer.showName) {
+          doc.setTextColor(100, 116, 139); // slate-500
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.text("BILL TO", 15, currentY);
+
+          // Left side: Name, Address, Contact
+          doc.setTextColor(15, 23, 42); // slate-900
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.text(customerName, 15, currentY + 7);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(71, 85, 105); // slate-600
+          let custY = currentY + 12;
+          if (customer.showBillingAddress && data.customerAddress) {
+            const addrLines = doc.splitTextToSize(data.customerAddress, 100);
+            addrLines.forEach((line: string) => {
+              doc.text(line, 15, custY);
+              custY += 4;
+            });
+          }
+          if (customer.showPhone && data.phoneNo) {
+            doc.text(`Phone: ${data.phoneNo}`, 15, custY);
+            custY += 4;
+          }
+          if (customer.showEmail && data.customerEmail) {
+            doc.text(`Email: ${data.customerEmail}`, 15, custY);
+            custY += 4;
+          }
+
+          // Right side: GSTIN, Place of Supply
+          let rightY = currentY + 7;
+          if (customer.showGSTIN && data.customerGSTIN) {
+            doc.setTextColor(15, 23, 42);
+            doc.setFont("helvetica", "normal");
+            doc.text("Customer GSTIN: ", 130, rightY);
+            doc.setTextColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+            doc.setFont("helvetica", "bold");
+            doc.text(data.customerGSTIN, 195, rightY, { align: "right" });
+            rightY += 5;
+          }
+
+          if (customer.showPlaceOfSupply && data.stateOfSupply) {
+            doc.setTextColor(100, 116, 139);
+            doc.setFont("helvetica", "normal");
+            doc.text("Place of Supply: ", 130, rightY);
+            doc.setTextColor(15, 23, 42);
+            doc.setFont("helvetica", "bold");
+            doc.text(data.stateOfSupply, 195, rightY, { align: "right" });
+          }
+
+          currentY = Math.max(custY + 5, rightY + 8);
+        }
+
+        else if (sectionName === "invoiceInfo") {
+          // Draw container border box
+          const boxHeight = 18;
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(226, 232, 240);
+          doc.roundedRect(15, currentY, 180, boxHeight, 3, 3, 'FD');
+
+          let colWidth = 45;
+          let colX = 20;
+
+          const renderCol = (label: string, value: string, isColored = false) => {
+            doc.setTextColor(100, 116, 139); // slate-500
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.text(label.toUpperCase(), colX, currentY + 6);
+
+            if (isColored) {
+              doc.setTextColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+            } else {
+              doc.setTextColor(15, 23, 42);
+            }
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.text(value, colX, currentY + 12);
+            colX += colWidth;
+          };
+
+          if (invoiceInfo.showInvoiceNumber && data.invoiceNo) {
+            renderCol(invoiceInfo.labels?.invoiceNumber || "INVOICE NO.", `#${data.invoiceNo}`, true);
+          }
+          if (invoiceInfo.showInvoiceDate && data.invoiceDate) {
+            renderCol(invoiceInfo.labels?.invoiceDate || "INVOICE DATE", data.invoiceDate);
+          }
+          if (invoiceInfo.showDueDate && data.dueDate) {
+            renderCol(invoiceInfo.labels?.dueDate || "DUE DATE", data.dueDate);
+          }
+          if (invoiceInfo.showPaymentTerms && data.paymentTerms) {
+            renderCol(invoiceInfo.labels?.paymentTerms || "PAYMENT TERMS", data.paymentTerms);
+          }
+
+          currentY += boxHeight + 8;
+        }
+
+        else if (sectionName === "items") {
+          // Render item table
+          const activeCols = itemsCfg.columns || ["item", "hsn", "quantity", "rate", "tax", "amount"];
+          const colMapping: any = {
+            item: itemsCfg.labels?.item || "Item",
+            description: itemsCfg.labels?.description || "Description",
+            sku: itemsCfg.labels?.sku || "SKU",
+            hsn: itemsCfg.labels?.hsn || "HSN/SAC",
+            quantity: itemsCfg.labels?.quantity || "Qty",
+            rate: itemsCfg.labels?.rate || "Rate",
+            tax: itemsCfg.labels?.tax || "Tax",
+            amount: itemsCfg.labels?.amount || "Amount"
+          };
+
+          const tableHead = activeCols.map(col => colMapping[col] || col);
+          const tableBody = data.items.map((item: InvoiceItem) => {
+            return activeCols.map(col => {
+              switch (col) {
+                case "item":        return item.itemName || "";
+                case "description": return "";
+                case "sku":         return item.itemCode || "-";
+                case "hsn":         return item.hsnCode || "-";
+                case "quantity":    return `${item.quantity} ${item.unit || 'Pcs'}`;
+                case "rate":        return `INR ${(item.pricePerUnit || 0).toFixed(2)}`;
+                case "tax":         return `${item.taxPercent || 0}%`;
+                case "amount":      return `INR ${(item.amount || 0).toFixed(2)}`;
+                default:            return "";
+              }
+            });
+          });
+
+          autoTable(doc, {
+            startY: currentY,
+            head: [tableHead],
+            body: tableBody,
+            theme: design.borderStyle === 'none' ? 'plain' : 'striped',
+            headStyles: { fillColor: primaryRgb as [number,number,number], textColor: [255, 255, 255] as [number,number,number], fontStyle: 'bold', fontSize: 9 },
+            bodyStyles: { textColor: [15, 23, 42] as [number,number,number], fontSize: 9 },
+            columnStyles: activeCols.reduce((acc: any, col: string, i: number) => {
+              if (col === 'amount' || col === 'rate') acc[i] = { halign: 'right' };
+              return acc;
+            }, {})
+          });
+
+          currentY = ((doc as any).lastAutoTable?.finalY ?? (currentY + 50)) + 8;
+        }
+
+        else if (sectionName === "tax" && tax.showSummary) {
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          doc.text(`Subtotal:`, 130, currentY);
+          doc.text(`INR ${(data.subtotal || 0).toFixed(2)}`, 190, currentY, { align: 'right' });
+          let totY = currentY + 6;
+
+          const addTotalRow = (label: string, value: number, isBold = false) => {
+            if (isBold) {
+              doc.setFillColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+              doc.rect(125, totY - 4, 70, 8, 'F');
+              doc.setTextColor(255, 255, 255);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(10);
+            }
+            doc.text(label, 130, totY);
+            doc.text(`INR ${value.toFixed(2)}`, 190, totY, { align: 'right' });
+            if (isBold) {
+              doc.setTextColor(15, 23, 42);
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9);
+            }
+            totY += 6;
+          };
+
+          if (tax.showCGST && (data.totalCgst || 0) > 0) addTotalRow("CGST:", data.totalCgst);
+          if (tax.showSGST && (data.totalSgst || 0) > 0) addTotalRow("SGST:", data.totalSgst);
+          if (tax.showIGST && (data.totalIgst || 0) > 0) addTotalRow("IGST:", data.totalIgst);
+          if (tax.showTotalTax && (data.totalTax || 0) > 0) addTotalRow("Total Tax:", data.totalTax);
+
+          const shipping  = data.shippingCharges  || 0;
+          const packaging = data.packagingCharges || 0;
+          const freight   = data.freightCharges   || 0;
+          const adjustment = data.adjustment      || 0;
+
+          if (shipping  > 0) addTotalRow("Shipping:", shipping);
+          if (packaging > 0) addTotalRow("Packaging:", packaging);
+          if (freight   > 0) addTotalRow("Freight:", freight);
+          if (adjustment !== 0) addTotalRow("Adjustment:", adjustment);
+
+          addTotalRow("GRAND TOTAL:", data.total || 0, true);
+          currentY = totY + 4;
+        }
+
+        else if (sectionName === "payment" && payment.showPaidAmount) {
+          // Draw rounded container box matching preview styles
+          const boxHeight = 18;
+          const bgCol = hexToRgb(design.secondaryColor || "#f8fafc");
+          const borderCol = hexToRgb(design.borderColor || "#cbd5e1");
+          const radius = design.cornerRadius || 3;
+          
+          doc.setFillColor(bgCol[0], bgCol[1], bgCol[2]);
+          doc.setDrawColor(borderCol[0], borderCol[1], borderCol[2]);
+          doc.roundedRect(15, currentY, 180, boxHeight, radius, radius, 'FD');
+
+          let colWidth = 55;
+          let colX = 20;
+
+          const renderCol = (label: string, value: string, isColored = false, colorHex = "") => {
+            doc.setTextColor(100, 116, 139); // slate-500
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.text(label.toUpperCase(), colX, currentY + 6);
+
+            if (isColored && colorHex) {
+              const rgb = hexToRgb(colorHex);
+              doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+            } else if (isColored) {
+              doc.setTextColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+            } else {
+              doc.setTextColor(15, 23, 42); // slate-900
+            }
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.text(value, colX, currentY + 12);
+            colX += colWidth;
+          };
+
+          if (payment.showPaidAmount) {
+            renderCol("Paid Amount", `INR ${(data.paid || 0).toFixed(2)}`);
+          }
+          if (payment.showBalance) {
+            renderCol("Balance Due", `INR ${(data.balance || 0).toFixed(2)}`, true, "#e11d48");
+          }
+          if (payment.showPaymentMethod && data.paymentMethod) {
+            renderCol("Method", data.paymentMethod);
+          }
+
+          currentY += boxHeight + 8;
+        }
+
+        else if (sectionName === "notes" && notes.show && notes.defaultText) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.text(notes.label || "Notes:", 15, currentY);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8);
+          const noteLines = doc.splitTextToSize(notes.defaultText, 100);
+          doc.text(noteLines, 15, currentY + 5);
+          currentY += (noteLines.length * 4) + 8;
+        }
+
+        else if (sectionName === "terms" && terms.show && terms.defaultText) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.text(terms.label || "Terms & Conditions:", 15, currentY);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8);
+          const termLines = doc.splitTextToSize(terms.defaultText, 100);
+          doc.text(termLines, 15, currentY + 5);
+          currentY += (termLines.length * 4) + 8;
+        }
+
+        else if (sectionName === "signature" && signature.show) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.text("Authorized Signatory", 150, currentY + 20);
+          doc.line(150, currentY + 22, 195, currentY + 22);
+          doc.setFont("helvetica", "normal");
+          if (signature.name) doc.text(signature.name, 150, currentY + 26);
+          if (signature.designation) doc.text(signature.designation, 150, currentY + 30);
+          if (signature.imageUrl) {
+            try {
+              doc.addImage(signature.imageUrl, 'PNG', 150, currentY + 2, 30, 15);
+            } catch (e) {
+              console.log("Signature image loading error:", e);
+            }
+          }
+          currentY += 35;
+        }
+
+        else if (sectionName === "footer" && footer.show && footer.text) {
+          doc.setFont("helvetica", "italic");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(footer.text, 15, 282, { maxWidth: 180 });
         }
       });
 
-      // Totals block below the table
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Subtotal:`, 130, finalY);
-      doc.text(`INR ${data.subtotal.toFixed(2)}`, 190, finalY, { align: 'right' });
-
-      let currentY = finalY + 6;
-      if (data.totalSgst > 0) {
-        doc.text(`SGST:`, 130, currentY);
-        doc.text(`INR ${data.totalSgst.toFixed(2)}`, 190, currentY, { align: 'right' });
-        currentY += 6;
+      // Generate Blob URL and open print preview natively
+      const pdfBlob = doc.output('blob');
+      const blobURL = URL.createObjectURL(pdfBlob);
+      
+      const printWindow = window.open(blobURL);
+      if (printWindow) {
+        toast.success("Opening print preview...");
+      } else {
+        doc.save(`invoice_${data.invoiceNo}.pdf`);
+        toast.success("PDF saved! Please check your downloads.");
       }
-      if (data.totalCgst > 0) {
-        doc.text(`CGST:`, 130, currentY);
-        doc.text(`INR ${data.totalCgst.toFixed(2)}`, 190, currentY, { align: 'right' });
-        currentY += 6;
-      }
-      if (data.totalIgst > 0) {
-        doc.text(`IGST:`, 130, currentY);
-        doc.text(`INR ${data.totalIgst.toFixed(2)}`, 190, currentY, { align: 'right' });
-        currentY += 6;
-      }
-
-      doc.text(`Total Tax:`, 130, currentY);
-      doc.text(`INR ${data.totalTax.toFixed(2)}`, 190, currentY, { align: 'right' });
-      currentY += 8;
-
-      // Grand Total in box
-      doc.setFillColor(243, 244, 246); // Gray 100
-      doc.rect(125, currentY - 5, 70, 10, 'F');
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text(`Grand Total:`, 130, currentY + 1);
-      doc.text(`INR ${data.total.toFixed(2)}`, 190, currentY + 1, { align: 'right' });
-
-      currentY += 12;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Amount Paid:`, 130, currentY);
-      doc.text(`INR ${data.paid.toFixed(2)}`, 190, currentY, { align: 'right' });
-
-      currentY += 6;
-      doc.text(`Balance Due:`, 130, currentY);
-      doc.setFont("helvetica", "bold");
-      doc.text(`INR ${data.balance.toFixed(2)}`, 190, currentY, { align: 'right' });
-
-      // Footer message
-      const footerY = 280;
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text("This is a digitally generated invoice. No signature required.", 15, footerY);
-      doc.text("Powered by SHREE ANDAL AI SOFTWARE SOLUTIONS", 120, footerY);
-
-      // Save PDF
-      doc.save(`invoice_${data.invoiceNo}.pdf`);
-      toast.success("PDF generated & downloaded successfully!");
     } catch (e) {
       console.error(e);
       toast.error("Failed to generate PDF");
@@ -1355,9 +1987,14 @@ const AutomationInvoice = () => {
     }
   };
 
-  // Print invoice
+  // Print invoice — uses active template (colors, fonts, columns) via PDF
   const printInvoice = () => {
-    window.print();
+    if (currentInvoice.items.length === 0) {
+      toast.error("Add at least one item before printing.");
+      return;
+    }
+    // Use the template-aware PDF generator and print the result
+    generateInvoicePDF(currentInvoice);
   };
 
   // Copy invoice details
@@ -1384,50 +2021,74 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
       .catch(err => console.error("Failed to copy:", err));
   };
 
-  // Share on WhatsApp
-  const shareOnWhatsApp = () => {
+  // Share on WhatsApp — auto-saves first if needed
+  const shareOnWhatsApp = async () => {
     if (currentInvoice.items.length === 0 && invoiceHistory.length === 0) {
-      toast.error("Generate an invoice before sharing");
+      toast.error("Add items to the invoice before sharing.");
       return;
     }
 
-    // Enforce save before sharing if there's unsaved data
-    if (!lastSavedId && currentInvoice.items.length > 0) {
-      toast.error("Please save the invoice first to generate a secure sharing link.");
-      return;
+    let idToUse = lastSavedId;
+
+    // Auto-save if not yet saved
+    if (!idToUse && currentInvoice.items.length > 0) {
+      toast.info("Saving invoice before sharing...");
+      const savedId = await saveInvoice('sent');
+      if (!savedId) {
+        toast.error("Could not save invoice. Share cancelled.");
+        return;
+      }
+      idToUse = savedId;
     }
 
-    // If form is empty but we have history, use the last one
-    const data = lastSavedId ? currentInvoice : (invoiceHistory[0] || currentInvoice);
+    // Use saved invoice data
+    const data = currentInvoice;
     const customerName = data.partyName || 'Valued Customer';
+    const grandTotal = data.total || 0;
+    const amountPaid = data.paid || 0;
+    const balanceDue = data.balance || 0;
 
-     // Build professional message based on user template
-     let message = `*INVOICE: ${data.invoiceNo}*\n`;
-     message += `__________________________\n\n`;
-     message += `Dear *${customerName}*,\n\n`;
-     message += `A new invoice has been generated for your recent transaction with *${data.sellerName || 'SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED'}*.\n\n`;
-     message += `*Bill Summary:*\n`;
-     message += `• Invoice ID: #${data.invoiceNo}\n`;
-     message += `• Date: ${data.invoiceDate}\n`;
-     message += `• Total Amount: ₹${data.total.toFixed(2)}\n\n`;
-     message += `You can view, download, or pay your invoice online using the secure link below:\n`;
- 
-     const idToUse = lastSavedId || (data as any).id;
-     if (!idToUse) {
-       toast.error("Please save the invoice first.");
-       return;
-     }
-     const shareLink = `https://software.saaiss.in/invoice/view/${idToUse}`;
- 
-     message += `🔗 ${shareLink}\n\n`;
-     message += `If you have any questions regarding this invoice, please feel free to reach out to us.\n\n`;
-     message += `Best regards,\n`;
-     message += `*${data.sellerName || 'SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED'}*\n`;
-     message += `__________________________\n`;
-     message += `_Powered by Sri Andal Financial Automation_`;
+    // Always use production domain for the shareable link — localhost links won't work for customers
+    const productionBase = 'https://software.saaiss.in';
+    const shareLink = idToUse ? `${productionBase}/invoice/view/${idToUse}` : null;
+
+    // Build professional WhatsApp message
+    let message = `*INVOICE: ${data.invoiceNo}*\n`;
+    message += `__________________________\n\n`;
+    message += `Dear *${customerName}*,\n\n`;
+    message += `A new invoice has been generated for your recent transaction with *${data.sellerName || 'us'}*.\n\n`;
+    message += `*Bill Summary:*\n`;
+    message += `• Invoice No: #${data.invoiceNo}\n`;
+    message += `• Date: ${data.invoiceDate}\n`;
+    message += `• Total Amount: ₹${grandTotal.toFixed(2)}\n`;
+    if (amountPaid > 0) message += `• Amount Paid: ₹${amountPaid.toFixed(2)}\n`;
+    if (balanceDue > 0) message += `• Balance Due: ₹${balanceDue.toFixed(2)}\n`;
+    message += `\n`;
+
+    if (shareLink) {
+      message += `📄 *View & Download Invoice:*\n🔗 ${shareLink}\n\n`;
+    }
+
+    message += `For any queries, please feel free to reach out.\n\n`;
+    message += `Best regards,\n`;
+    message += `*${data.sellerName || 'Your Business'}*\n`;
+    message += `__________________________\n`;
+    message += `_Powered by AIBASS Financial Automation_`;
 
     const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+
+    // If customer phone is available, open direct WhatsApp chat; otherwise open share sheet
+    const rawPhone = data.phoneNo?.replace(/\D/g, '') || '';
+    const phoneWithCode = rawPhone && !rawPhone.startsWith('91') && rawPhone.length === 10
+      ? `91${rawPhone}`
+      : rawPhone;
+
+    const waUrl = phoneWithCode
+      ? `https://wa.me/${phoneWithCode}?text=${encodedMessage}`
+      : `https://wa.me/?text=${encodedMessage}`;
+
+    window.open(waUrl, '_blank');
+    toast.success("WhatsApp opened! Send the message to your customer.");
   };
 
   // Apply parsed voice data
@@ -1583,14 +2244,24 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-white/40 bg-white/24 backdrop-blur-2xl no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <Button
-            variant="ghost"
-            onClick={handleBackToDashboard}
-            className="mb-4 rounded-full border border-white/60 bg-white/45 text-slate-700 hover:bg-white/70 hover:text-slate-950"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              onClick={handleBackToDashboard}
+              className="mb-4 rounded-full border border-white/60 bg-white/45 text-slate-700 hover:bg-white/70 hover:text-slate-950"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Dashboard
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => navigate("/invoice/templates")}
+              className="mb-4 rounded-full border border-white/60 bg-white/45 text-slate-700 hover:bg-white/70 hover:text-slate-950 flex items-center gap-1.5"
+            >
+              <Layout className="h-4 w-4 text-indigo-600" />
+              Invoice Templates
+            </Button>
+          </div>
           <div className="flex items-center gap-4">
             <div className="liquid-icon flex h-16 w-16 items-center justify-center rounded-[22px]">
               <Receipt className="h-8 w-8 text-slate-900" />
@@ -1648,7 +2319,7 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                   {[
                     { type: 'cash', label: 'Cash', icon: Banknote, activeClass: 'bg-emerald-600 text-white' },
                     { type: 'credit', label: 'Credit', icon: CreditCard, activeClass: 'bg-blue-600 text-white' },
-                    { type: 'gpay', label: 'GPay', icon: Smartphone, activeClass: 'bg-violet-600 text-white' },
+                    { type: 'UPI', label: 'UPI', icon: Smartphone, activeClass: 'bg-violet-600 text-white' },
                     { type: 'netbanking', label: 'Netbanking', icon: Building2, activeClass: 'bg-indigo-600 text-white' }
                   ].map((mode) => (
                     <button
@@ -1667,7 +2338,7 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                     </button>
                   ))}
                 </div>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   <div className="space-y-2">
                     <Label className="text-slate-800 text-sm font-semibold">Print Size</Label>
                     <Select value={currentInvoice.invoiceSize} onValueChange={(val: 'A4' | 'QUARTER_A4' | 'A6') => setCurrentInvoice(prev => ({ ...prev, invoiceSize: val }))}>
@@ -1697,7 +2368,7 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                   <div className="space-y-2">
                     <Label className="text-slate-800 text-sm font-semibold">Transaction Type</Label>
                     <Select value={currentInvoice.transactionType} onValueChange={(val: 'B2B' | 'B2C') => setCurrentInvoice(prev => ({ ...prev, transactionType: val }))}>
-                      <SelectTrigger className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 focus:border-slate-300">
+                      <SelectTrigger className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 focus:border-slate-350">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-white border border-slate-200 text-slate-900">
@@ -1706,44 +2377,148 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-800 text-sm font-semibold">Due Date</Label>
+                    <Input
+                      type="date"
+                      value={currentInvoice.dueDate}
+                      onChange={(e) => setCurrentInvoice(prev => ({ ...prev, dueDate: e.target.value }))}
+                      className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 focus:border-slate-350"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-800 text-sm font-semibold">Payment Terms</Label>
+                    <Select value={currentInvoice.paymentTerms} onValueChange={(val) => setCurrentInvoice(prev => ({ ...prev, paymentTerms: val }))}>
+                      <SelectTrigger className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 focus:border-slate-350">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white border border-slate-200 text-slate-900">
+                        <SelectItem value="Due on Receipt">Due on Receipt</SelectItem>
+                        <SelectItem value="Net 15">Net 15</SelectItem>
+                        <SelectItem value="Net 30">Net 30</SelectItem>
+                        <SelectItem value="Net 60">Net 60</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-800 text-sm font-semibold">Order / Reference No.</Label>
+                    <Input
+                      value={currentInvoice.orderNumber || ''}
+                      onChange={(e) => setCurrentInvoice(prev => ({ ...prev, orderNumber: e.target.value }))}
+                      placeholder="e.g. PO-98211"
+                      className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-slate-350"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-800 text-sm font-semibold">Salesperson</Label>
+                    <Input
+                      value={currentInvoice.salespersonName || ''}
+                      onChange={(e) => setCurrentInvoice(prev => ({ ...prev, salespersonName: e.target.value }))}
+                      placeholder="Sales agent name"
+                      className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-slate-350"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-800 text-sm font-semibold">Currency</Label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <Select value={currentInvoice.currency} onValueChange={(val) => setCurrentInvoice(prev => ({ ...prev, currency: val }))}>
+                        <SelectTrigger className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 focus:border-slate-350">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white border border-slate-200 text-slate-900">
+                          <SelectItem value="INR">INR ₹</SelectItem>
+                          <SelectItem value="USD">USD $</SelectItem>
+                          <SelectItem value="EUR">EUR €</SelectItem>
+                          <SelectItem value="GBP">GBP £</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        value={currentInvoice.exchangeRate}
+                        onChange={(e) => setCurrentInvoice(prev => ({ ...prev, exchangeRate: parseFloat(e.target.value) || 1 }))}
+                        placeholder="Ex. Rate"
+                        disabled={currentInvoice.currency === 'INR'}
+                        className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 focus:border-slate-350 disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
                 </div>
               </Card>
 
               {invoiceType === 'sales' && (
                 <Card className="liquid-panel overflow-hidden rounded-[36px] border-white/55 p-5">
-                  <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-slate-800" />
-                    Seller Details
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                    <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                      <Building2 className="h-5 w-5 text-slate-800" />
+                      Seller Details
+                    </h2>
+                    <span 
+                      onClick={() => navigate("/profile")} 
+                      className="text-xs text-indigo-600 font-semibold hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      Edit in Profile Settings →
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label className="text-slate-800 text-sm font-semibold">Seller Name *</Label>
                       <Input
                         value={currentInvoice.sellerName}
-                        onChange={(e) => setCurrentInvoice(prev => ({ ...prev, sellerName: e.target.value }))}
+                        readOnly={true}
                         placeholder="Enter seller name"
-                        className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400"
+                        className="h-10 rounded-[14px] border-slate-200 bg-slate-50 text-slate-900 cursor-not-allowed placeholder:text-slate-400 focus:border-slate-350"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-slate-800 text-sm font-semibold">Phone Number</Label>
                       <Input
                         value={currentInvoice.sellerPhone}
-                        onChange={(e) => setCurrentInvoice(prev => ({ ...prev, sellerPhone: e.target.value }))}
+                        readOnly={true}
                         placeholder="Enter phone number"
-                        className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400"
+                        className="h-10 rounded-[14px] border-slate-200 bg-slate-50 text-slate-900 cursor-not-allowed placeholder:text-slate-400 focus:border-slate-350"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-slate-800 text-sm font-semibold">Seller Email</Label>
+                      <Input
+                        value={currentInvoice.sellerEmail || ''}
+                        readOnly={true}
+                        placeholder="seller@example.com"
+                        className="h-10 rounded-[14px] border-slate-200 bg-slate-50 text-slate-900 cursor-not-allowed placeholder:text-slate-400 focus:border-slate-350"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-slate-800 text-sm font-semibold">Seller GSTIN</Label>
                       <Input
                         value={currentInvoice.sellerGSTIN}
-                        onChange={(e) => {
-                          const sellerGSTIN = e.target.value.toUpperCase();
-                          setCurrentInvoice(prev => ({ ...prev, sellerGSTIN, transactionType: classifyTransaction(sellerGSTIN, prev.customerGSTIN || '') }));
-                        }}
+                        readOnly={true}
                         placeholder="Enter seller GSTIN"
-                        className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400"
+                        className="h-10 rounded-[14px] border-slate-200 bg-slate-50 text-slate-900 cursor-not-allowed placeholder:text-slate-400 focus:border-slate-350"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-slate-800 text-sm font-semibold">Seller State</Label>
+                      <Select
+                        value={currentInvoice.businessState}
+                        disabled={true}
+                      >
+                        <SelectTrigger className="h-10 rounded-[14px] border-slate-200 bg-slate-50 text-slate-900 cursor-not-allowed focus:border-slate-350">
+                          <SelectValue placeholder="Select Business State" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white border border-slate-200 text-slate-900 max-h-48 overflow-y-auto">
+                          {INDIAN_STATES.map(st => (
+                            <SelectItem key={st} value={st}>{st}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-slate-800 text-sm font-semibold">Seller Address</Label>
+                      <Input
+                        value={currentInvoice.sellerAddress || ''}
+                        readOnly={true}
+                        placeholder="Full seller address"
+                        className="h-10 rounded-[14px] border-slate-200 bg-slate-50 text-slate-900 cursor-not-allowed placeholder:text-slate-400 focus:border-slate-350"
                       />
                     </div>
                   </div>
@@ -1757,26 +2532,99 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                   {invoiceType === 'sales' ? 'Customer Details' : 'Customer Details (Purchase Invoice)'}
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-slate-800 text-sm font-semibold">Customer Name *</Label>
+                  <div className="space-y-2 relative">
+                    <div className="flex justify-between items-center">
+                      <Label className="text-slate-800 text-sm font-semibold">Customer Name *</Label>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddCustomerOpen(true)}
+                        className="text-xs text-indigo-700 hover:text-indigo-900 font-bold hover:underline"
+                      >
+                        + Add Customer
+                      </button>
+                    </div>
                     <div className="flex gap-2">
-                      <Input
-                        value={currentInvoice.partyName}
-                        onChange={(e) => {
-                          setLastSavedId(null);
-                          setCurrentInvoice(prev => ({ ...prev, partyName: e.target.value }));
-                        }}
-                        placeholder="Enter name"
-                        className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-slate-300"
-                      />
+                      <div className="relative flex-1">
+                        <Input
+                          value={currentInvoice.partyName}
+                          onChange={(e) => {
+                            setLastSavedId(null);
+                            setCurrentInvoice(prev => ({ ...prev, partyName: e.target.value }));
+                            setCustomerSearchTerm(e.target.value);
+                            setIsCustomerDropdownOpen(true);
+                          }}
+                          onFocus={() => {
+                            setCustomerSearchTerm(currentInvoice.partyName);
+                            setIsCustomerDropdownOpen(true);
+                          }}
+                          placeholder="Search or enter name"
+                          className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-slate-300"
+                        />
+                        {isCustomerDropdownOpen && (
+                          <div className="absolute z-30 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-[14px] shadow-lg p-2 space-y-1">
+                            {customersList.filter(cust =>
+                              cust.name.toLowerCase().includes(customerSearchTerm.toLowerCase()) ||
+                              cust.phone.includes(customerSearchTerm)
+                            ).length > 0 ? (
+                              customersList.filter(cust =>
+                                cust.name.toLowerCase().includes(customerSearchTerm.toLowerCase()) ||
+                                cust.phone.includes(customerSearchTerm)
+                              ).map((cust) => (
+                                <div
+                                  key={cust._id}
+                                  onClick={() => {
+                                    setCurrentInvoice(prev => ({
+                                      ...prev,
+                                      partyName: cust.name,
+                                      phoneNo: cust.phone || "",
+                                      customerEmail: cust.email || "",
+                                      customerGSTIN: cust.gstin || "",
+                                      stateOfSupply: cust.placeOfSupply || "",
+                                      customerAddress: cust.billingAddress || ""
+                                    }));
+                                    setIsCustomerDropdownOpen(false);
+                                  }}
+                                  className="p-2.5 rounded-lg hover:bg-indigo-50 cursor-pointer flex justify-between items-center text-xs text-left"
+                                >
+                                  <div>
+                                    <p className="font-semibold text-slate-900">{cust.name}</p>
+                                    <p className="text-slate-500">{cust.email || "No email"}</p>
+                                  </div>
+                                  <div className="text-right text-slate-500">
+                                    <p>{cust.phone || "No phone"}</p>
+                                    {cust.gstin && <p className="text-[10px] font-bold text-indigo-700">GST: {cust.gstin}</p>}
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="p-3 text-center text-slate-500 text-xs">
+                                No customers found. Click "+ Add Customer" to create one.
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsCustomerDropdownOpen(false);
+                              }}
+                              className="w-full py-1.5 text-[11px] text-slate-500 hover:text-slate-700 border-t border-slate-100 mt-1 text-center font-bold"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       <VoiceButton
                         onTranscript={(text) => {
                           setLastSavedId(null);
                           setCurrentInvoice(prev => ({ ...prev, partyName: text }));
+                          setCustomerSearchTerm(text);
+                          setIsCustomerDropdownOpen(true);
                         }}
                         onClear={() => {
                           setLastSavedId(null);
                           setCurrentInvoice(prev => ({ ...prev, partyName: '' }));
+                          setCustomerSearchTerm('');
                         }}
                       />
                     </div>
@@ -1808,6 +2656,19 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                   </div>
 
                   <div className="space-y-2">
+                    <Label className="text-slate-800 text-sm font-semibold">Customer Email</Label>
+                    <Input
+                      value={currentInvoice.customerEmail || ''}
+                      onChange={(e) => {
+                        setLastSavedId(null);
+                        setCurrentInvoice(prev => ({ ...prev, customerEmail: e.target.value }));
+                      }}
+                      placeholder="customer@example.com"
+                      className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-slate-300"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label className="text-slate-800 text-sm font-semibold">Customer GSTIN</Label>
                     <Input
                       value={currentInvoice.customerGSTIN || ''}
@@ -1817,6 +2678,19 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                         setCurrentInvoice(prev => ({ ...prev, customerGSTIN, transactionType: classifyTransaction(prev.sellerGSTIN, customerGSTIN) }));
                       }}
                       placeholder="Enter GSTIN"
+                      className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-slate-300"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-slate-800 text-sm font-semibold">Customer Address</Label>
+                    <Input
+                      value={currentInvoice.customerAddress || ''}
+                      onChange={(e) => {
+                        setLastSavedId(null);
+                        setCurrentInvoice(prev => ({ ...prev, customerAddress: e.target.value }));
+                      }}
+                      placeholder="Billing Address"
                       className="h-10 rounded-[14px] border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-slate-300"
                     />
                   </div>
@@ -2269,6 +3143,122 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                   </div>
                 </Card>
               )}
+
+              {/* Additional Charges Section */}
+              <Card className="liquid-panel overflow-hidden rounded-[36px] border-white/55 p-5">
+                <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <Plus className="h-5 w-5 text-slate-800" />
+                  Additional Charges
+                </h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-800 text-sm font-semibold">Shipping Charges</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">₹</span>
+                      <Input
+                        type="number"
+                        value={currentInvoice.shippingCharges || 0}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setCurrentInvoice(prev => {
+                            const next = { ...prev, shippingCharges: val };
+                            const computed = calculateInvoiceTotals(next.items, val, next.packagingCharges, next.freightCharges, next.adjustment);
+                            return { ...next, ...computed, balance: computed.total - next.paid };
+                          });
+                        }}
+                        className="pl-8 rounded-xl border-slate-200 text-slate-900 focus:border-slate-350"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-800 text-sm font-semibold">Packaging Charges</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">₹</span>
+                      <Input
+                        type="number"
+                        value={currentInvoice.packagingCharges || 0}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setCurrentInvoice(prev => {
+                            const next = { ...prev, packagingCharges: val };
+                            const computed = calculateInvoiceTotals(next.items, next.shippingCharges, val, next.freightCharges, next.adjustment);
+                            return { ...next, ...computed, balance: computed.total - next.paid };
+                          });
+                        }}
+                        className="pl-8 rounded-xl border-slate-200 text-slate-900 focus:border-slate-350"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-800 text-sm font-semibold">Freight/Other Charges</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">₹</span>
+                      <Input
+                        type="number"
+                        value={currentInvoice.freightCharges || 0}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setCurrentInvoice(prev => {
+                            const next = { ...prev, freightCharges: val };
+                            const computed = calculateInvoiceTotals(next.items, next.shippingCharges, next.packagingCharges, val, next.adjustment);
+                            return { ...next, ...computed, balance: computed.total - next.paid };
+                          });
+                        }}
+                        className="pl-8 rounded-xl border-slate-200 text-slate-900 focus:border-slate-350"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-800 text-sm font-semibold">Adjustment</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">₹</span>
+                      <Input
+                        type="number"
+                        value={currentInvoice.adjustment || 0}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setCurrentInvoice(prev => {
+                            const next = { ...prev, adjustment: val };
+                            const computed = calculateInvoiceTotals(next.items, next.shippingCharges, next.packagingCharges, next.freightCharges, val);
+                            return { ...next, ...computed, balance: computed.total - next.paid };
+                          });
+                        }}
+                        className="pl-8 rounded-xl border-slate-200 text-slate-900 focus:border-slate-350"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Notes & Terms Section */}
+              <Card className="liquid-panel overflow-hidden rounded-[36px] border-white/55 p-5">
+                <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-slate-800" />
+                  Notes & Terms
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-800 text-sm font-semibold">Customer Notes</Label>
+                    <textarea
+                      value={currentInvoice.notes || ""}
+                      onChange={(e) => setCurrentInvoice(prev => ({ ...prev, notes: e.target.value }))}
+                      placeholder="Thanks for your business. It was a pleasure working with you!"
+                      className="w-full p-2.5 text-sm rounded-xl border border-slate-200 bg-white/80 text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-800 text-sm font-semibold">Terms & Conditions</Label>
+                    <textarea
+                      value={currentInvoice.termsAndConditions || ""}
+                      onChange={(e) => setCurrentInvoice(prev => ({ ...prev, termsAndConditions: e.target.value }))}
+                      placeholder="Payment is due within 15 days of invoice date."
+                      className="w-full p-2.5 text-sm rounded-xl border border-slate-200 bg-white/80 text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              </Card>
             </div>
 
             {/* Right Column - Summary */}
@@ -2322,6 +3312,33 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                     <span className="text-slate-900">₹{currentInvoice.totalTax.toFixed(2)}</span>
                   </div>
 
+                  {currentInvoice.shippingCharges > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-600">Shipping</span>
+                      <span className="text-slate-900">₹{currentInvoice.shippingCharges.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {currentInvoice.packagingCharges > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-600">Packaging</span>
+                      <span className="text-slate-900">₹{currentInvoice.packagingCharges.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {currentInvoice.freightCharges > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-600">Freight/Other</span>
+                      <span className="text-slate-900">₹{currentInvoice.freightCharges.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {currentInvoice.adjustment !== 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-600">Adjustment</span>
+                      <span className={`font-medium ${currentInvoice.adjustment < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                        {currentInvoice.adjustment < 0 ? '-' : ''}₹{Math.abs(currentInvoice.adjustment).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center py-3 border-t border-slate-200">
                     <span className="text-slate-900 font-bold text-lg">Grand Total</span>
                     <span className="text-2xl font-black text-slate-950">
@@ -2355,16 +3372,85 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                   )}
                 </div>
 
+                {/* Template Selection */}
+                <div className="mt-4 pt-4 border-t border-slate-200 space-y-1.5">
+                  <Label className="text-slate-800 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <Layout className="h-3.5 w-3.5 text-slate-800" />
+                    Invoice Theme Template
+                  </Label>
+                  <Select 
+                    value={selectedTemplateId} 
+                    onValueChange={(val) => {
+                      if (val !== "none") {
+                        setSelectedTemplateId(val);
+                        setCurrentInvoice(prev => ({ ...prev, templateId: val }));
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-10 rounded-[14px] border-slate-200 bg-white text-slate-900 focus:border-slate-350">
+                      <SelectValue placeholder="Select Template" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border border-slate-250 text-slate-900 max-h-48 overflow-y-auto">
+                      {userTemplates.length === 0 ? (
+                        <SelectItem value="none" disabled>No templates. Using default.</SelectItem>
+                      ) : (
+                        userTemplates.map(t => (
+                          <SelectItem key={t._id} value={t._id}>
+                            {t.name} {t.isDefault ? "(Default)" : ""}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Action Buttons */}
                 <div className="mt-6 space-y-2">
-                  <Button
-                    onClick={saveInvoice}
-                    disabled={isSaving || currentInvoice.items.length === 0}
-                    className="w-full h-12 rounded-full bg-slate-950 font-semibold text-white transition-all duration-300 hover:bg-slate-800"
-                  >
-                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                    Save Invoice
-                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      onClick={() => saveInvoice('draft')}
+                      disabled={isSaving || currentInvoice.items.length === 0}
+                      variant="outline"
+                      className="h-12 rounded-xl bg-white border-slate-200 text-slate-900 font-semibold"
+                    >
+                      Save Draft
+                    </Button>
+                    <Button
+                      onClick={() => saveInvoice('sent')}
+                      disabled={isSaving || currentInvoice.items.length === 0}
+                      className="h-12 rounded-xl bg-slate-950 font-semibold text-white transition-all duration-300 hover:bg-slate-800"
+                    >
+                      {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                      Save & Send
+                    </Button>
+                  </div>
+
+                  {lastSavedId && (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      {currentInvoice.balance > 0 && currentInvoice.status !== 'cancelled' && (
+                        <Button
+                          onClick={() => {
+                            setPaymentForm(prev => ({ ...prev, amount: currentInvoice.balance }));
+                            setIsRecordPaymentOpen(true);
+                          }}
+                          className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold w-full"
+                        >
+                          <CreditCard className="h-4 w-4 mr-1.5" />
+                          Record Payment
+                        </Button>
+                      )}
+                      {currentInvoice.status !== 'cancelled' && (
+                        <Button
+                          onClick={handleCancelInvoice}
+                          variant="outline"
+                          className="h-11 rounded-xl border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold w-full"
+                        >
+                          <X className="h-4 w-4 mr-1.5" />
+                          Cancel/Reverse
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2">
                     <Button onClick={printInvoice} variant="outline" className="h-10 rounded-xl bg-white/60 border-slate-200 text-slate-850 hover:bg-slate-50">
@@ -2402,143 +3488,362 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
             {currentInvoice.items.length > 0 && (
               <div className="lg:col-span-3 mt-8">
                 <h3 className="text-xl font-bold text-slate-950 mb-4 no-print">Invoice Print Preview</h3>
-                <div id="invoice-official-copy" className="bg-white border border-slate-300 rounded-[12px] shadow-md overflow-hidden text-slate-950 p-8 lg:p-12 space-y-6 max-w-4xl mx-auto">
-                  {/* Header: Company Name & Invoice Number */}
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-6">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.24em] text-indigo-700">Tax Invoice</p>
-                      <h2 className="mt-2 text-2xl lg:text-3xl font-black text-slate-900">{currentInvoice.sellerName || 'SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED'}</h2>
-                      <p className="mt-1 text-sm text-slate-700 font-medium">
-                        {currentInvoice.sellerPhone ? `Phone: ${currentInvoice.sellerPhone}` : 'support@saaiss.in'}
-                      </p>
-                      {currentInvoice.sellerGSTIN && <p className="text-sm text-slate-700 font-medium">GSTIN: {currentInvoice.sellerGSTIN}</p>}
-                    </div>
-                    <div className="md:text-right">
-                      <p className="text-sm text-slate-500 font-medium">Invoice Number</p>
-                      <p className="text-2xl font-black text-slate-900">#{currentInvoice.invoiceNo}</p>
-                      <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3.5 py-1.5 text-xs font-bold uppercase tracking-widest text-slate-700 border border-slate-300">
-                        {currentInvoice.saleType?.toUpperCase() || "CASH"} | {currentInvoice.invoiceSize || "A4"}
-                      </p>
-                    </div>
-                  </div>
+                <div 
+                  id="invoice-official-copy" 
+                  className="w-[210mm] min-h-[297mm] bg-white p-12 shadow-2xl relative border rounded-sm mx-auto overflow-x-auto text-slate-950"
+                  style={{
+                    backgroundColor: activeTemplateConfig.design?.backgroundColor || "#ffffff",
+                    borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1",
+                    color: activeTemplateConfig.design?.textColor || "#0f172a",
+                    fontFamily: activeTemplateConfig.design?.fontFamily || "Inter",
+                    fontSize: `${activeTemplateConfig.design?.fontSize || 12}px`,
+                    lineHeight: "1.5"
+                  }}
+                >
+                  {activeTemplateConfig.sectionsOrder.map((sectionName: string) => {
+                    if (sectionName === "header") {
+                      return (
+                        <div 
+                          key="header" 
+                          className={`mb-6 flex ${activeTemplateConfig.header?.logoPosition === 'center' ? 'flex-col items-center text-center' : activeTemplateConfig.header?.logoPosition === 'right' ? 'flex-row-reverse justify-between items-start' : 'justify-between items-start'}`}
+                        >
+                          {activeTemplateConfig.header?.showLogo && (
+                            <div className="mb-2">
+                              {activeTemplateConfig.header.logoUrl ? (
+                                <img 
+                                  src={activeTemplateConfig.header.logoUrl} 
+                                  alt="Logo" 
+                                  className={`object-contain ${activeTemplateConfig.header.logoSize === 'small' ? 'h-10 w-24' : activeTemplateConfig.header.logoSize === 'large' ? 'h-20 w-44' : 'h-14 w-32'}`} 
+                                />
+                              ) : (
+                                <div 
+                                  className={`bg-slate-100 border border-dashed border-slate-300 flex items-center justify-center text-slate-400 text-xs font-bold rounded-lg ${activeTemplateConfig.header.logoSize === 'small' ? 'h-10 w-24' : activeTemplateConfig.header.logoSize === 'large' ? 'h-20 w-44' : 'h-14 w-32'}`}
+                                  style={{ borderRadius: `${activeTemplateConfig.design?.cornerRadius || 0}px` }}
+                                >
+                                  [ Company Logo ]
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                  {/* Details Section */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-b border-slate-200 pb-6">
-                    <div className="space-y-4">
-                      <div>
-                        <h2 className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2 border-l-2 border-indigo-500 pl-2">From</h2>
-                        <div className="space-y-0.5 text-sm">
-                          <p className="font-bold text-slate-950">{currentInvoice.sellerName || 'SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED'}</p>
-                          {currentInvoice.sellerPhone && <p className="text-slate-650">Phone: {currentInvoice.sellerPhone}</p>}
-                          {currentInvoice.sellerGSTIN && <p className="text-slate-650">GSTIN: {currentInvoice.sellerGSTIN}</p>}
+                          <div className={`max-w-md ${activeTemplateConfig.header?.logoPosition === 'right' ? 'text-left' : activeTemplateConfig.header?.logoPosition === 'center' ? 'text-center' : 'text-right'}`}>
+                            {activeTemplateConfig.header?.showCompanyName && (
+                              <h2 className="text-xl font-black" style={{ color: activeTemplateConfig.design?.primaryColor || "#4f46e5" }}>
+                                {currentInvoice.sellerName || 'SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED'}
+                              </h2>
+                            )}
+                            {activeTemplateConfig.header?.showAddress && (
+                              <p className="text-slate-500 text-xs mt-1">
+                                {currentInvoice.sellerAddress || '3/124 Main Road, Andal Nagar, Trichy, Tamil Nadu - 620001'}
+                              </p>
+                            )}
+                            {activeTemplateConfig.header?.showPhone && (
+                              <p className="text-slate-500 text-xs">
+                                Phone: {currentInvoice.sellerPhone || '+91 94432 10101'}
+                              </p>
+                            )}
+                            {activeTemplateConfig.header?.showEmail && (
+                              <p className="text-slate-500 text-xs">
+                                Email: {currentInvoice.sellerEmail || 'support@saaiss.in'}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      );
+                    }
 
-                      <div>
-                        <h2 className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2 border-l-2 border-indigo-500 pl-2">Bill To</h2>
-                        <div className="space-y-0.5 text-sm">
-                          <p className="font-bold text-slate-950">{currentInvoice.partyName || 'Valued Customer'}</p>
-                          {currentInvoice.phoneNo && <p className="text-slate-650">Phone: {currentInvoice.phoneNo}</p>}
-                          {currentInvoice.stateOfSupply && <p className="text-slate-650">State: {currentInvoice.stateOfSupply}</p>}
+                    if (sectionName === "seller" && activeTemplateConfig.seller?.showName) {
+                      return (
+                        <div 
+                          key="seller" 
+                          className="mb-6 p-4 rounded-xl border text-left" 
+                          style={{ 
+                            backgroundColor: activeTemplateConfig.design?.secondaryColor || "#f8fafc", 
+                            borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1",
+                            borderRadius: `${activeTemplateConfig.design?.cornerRadius || 0}px` 
+                          }}
+                        >
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Seller Details</h4>
+                          {activeTemplateConfig.seller.showName && <p className="font-extrabold">{currentInvoice.sellerName || 'SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED'}</p>}
+                          {activeTemplateConfig.seller.showAddress && <p className="text-slate-600 text-xs mt-0.5">{currentInvoice.sellerAddress || '3/124 Main Road, Andal Nagar, Trichy, Tamil Nadu - 620001'}</p>}
+                          {activeTemplateConfig.seller.showPhone && currentInvoice.sellerPhone && <p className="text-slate-600 text-xs">Phone: {currentInvoice.sellerPhone}</p>}
+                          {activeTemplateConfig.seller.showEmail && currentInvoice.sellerEmail && <p className="text-slate-600 text-xs">Email: {currentInvoice.sellerEmail}</p>}
+                          {activeTemplateConfig.seller.showGSTIN && currentInvoice.sellerGSTIN && (
+                            <p className="text-xs font-bold mt-1" style={{ color: activeTemplateConfig.design?.primaryColor || "#4f46e5" }}>
+                              GSTIN: {currentInvoice.sellerGSTIN}
+                            </p>
+                          )}
                         </div>
-                      </div>
-                    </div>
+                      );
+                    }
 
-                    <div className="space-y-2 md:text-right flex flex-col md:items-end text-sm">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 w-48 text-left md:text-right">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Invoice Date</h2>
-                        <p className="text-slate-950 font-bold">{currentInvoice.invoiceDate}</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 w-48 text-left md:text-right">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Due Date</h2>
-                        <p className="text-slate-950 font-bold">{currentInvoice.invoiceDate}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Items Table */}
-                  <div className="w-full overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b-2 border-slate-300 text-left bg-slate-50">
-                          <th className="py-3 px-2 text-xs font-bold uppercase tracking-wider text-slate-700">Item Name</th>
-                          <th className="py-3 px-2 text-xs font-bold uppercase tracking-wider text-slate-700">Code/Type</th>
-                          <th className="py-3 px-2 text-xs font-bold uppercase tracking-wider text-slate-700 text-center">Qty</th>
-                          <th className="py-3 px-2 text-xs font-bold uppercase tracking-wider text-slate-700 text-right">Price</th>
-                          <th className="py-3 px-2 text-xs font-bold uppercase tracking-wider text-slate-700 text-right">Tax %</th>
-                          <th className="py-3 px-2 text-xs font-bold uppercase tracking-wider text-slate-700 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {currentInvoice.items.map((item, idx) => (
-                          <tr key={item.id || idx} className="text-sm">
-                            <td className="py-4 px-2">
-                              <p className="text-slate-950 font-semibold">{item.itemName}</p>
-                              {item.itemCode && <p className="text-slate-500 text-xs mt-0.5">Code: {item.itemCode}</p>}
-                            </td>
-                            <td className="py-4 px-2 text-slate-650">{item.codeType || "HSN"}: {item.hsnCode || "-"}</td>
-                            <td className="py-4 px-2 text-center text-slate-700">{item.quantity} {item.unit || "Pcs"}</td>
-                            <td className="py-4 px-2 text-right text-slate-700">₹{item.pricePerUnit.toFixed(2)}</td>
-                            <td className="py-4 px-2 text-right text-slate-700">{item.taxPercent}%</td>
-                            <td className="py-4 px-2 text-right text-slate-950 font-bold">₹{item.amount.toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Totals Summary */}
-                  <div className="flex flex-col md:flex-row justify-between items-start gap-8 pt-6 border-t border-slate-200">
-                    <div className="text-xs text-slate-500">
-                      <p>Thank you for your business!</p>
-                      <p className="mt-1">This is a system-generated document.</p>
-                    </div>
-
-                    <div className="w-full md:w-72 space-y-2.5 text-sm">
-                      <div className="flex justify-between text-slate-600">
-                        <span>Subtotal</span>
-                        <span>₹{currentInvoice.subtotal.toFixed(2)}</span>
-                      </div>
-                      {currentInvoice.totalSgst > 0 && (
-                        <div className="flex justify-between text-slate-500 text-xs">
-                          <span>SGST</span>
-                          <span>₹{currentInvoice.totalSgst.toFixed(2)}</span>
+                    if (sectionName === "customer" && activeTemplateConfig.customer?.showName) {
+                      return (
+                        <div key="customer" className="mb-6 grid grid-cols-2 gap-4 text-left">
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Bill To</h4>
+                            {activeTemplateConfig.customer.showName && <p className="font-bold text-sm">{currentInvoice.partyName || 'Valued Customer'}</p>}
+                            {activeTemplateConfig.customer.showBillingAddress && (
+                              <p className="text-slate-600 text-xs mt-0.5">
+                                {currentInvoice.customerAddress || 'Billing Address'}
+                              </p>
+                            )}
+                            {activeTemplateConfig.customer.showPhone && currentInvoice.phoneNo && <p className="text-slate-650 text-xs">Phone: {currentInvoice.phoneNo}</p>}
+                            {activeTemplateConfig.customer.showEmail && currentInvoice.customerEmail && <p className="text-slate-650 text-xs">Email: {currentInvoice.customerEmail}</p>}
+                          </div>
+                          <div className="text-right">
+                            {activeTemplateConfig.customer.showGSTIN && currentInvoice.customerGSTIN && (
+                              <p className="text-xs font-bold mt-6">
+                                Customer GSTIN: <span style={{ color: activeTemplateConfig.design?.primaryColor || "#4f46e5" }}>{currentInvoice.customerGSTIN}</span>
+                              </p>
+                            )}
+                            {activeTemplateConfig.customer.showPlaceOfSupply && currentInvoice.stateOfSupply && (
+                              <p className="text-xs text-slate-600">
+                                Place of Supply: <span className="font-medium text-slate-900">{currentInvoice.stateOfSupply}</span>
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      )}
-                      {currentInvoice.totalCgst > 0 && (
-                        <div className="flex justify-between text-slate-500 text-xs">
-                          <span>CGST</span>
-                          <span>₹{currentInvoice.totalCgst.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {currentInvoice.totalIgst > 0 && (
-                        <div className="flex justify-between text-slate-500 text-xs">
-                          <span>IGST</span>
-                          <span>₹{currentInvoice.totalIgst.toFixed(2)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-slate-600">
-                        <span>Total Tax</span>
-                        <span>₹{currentInvoice.totalTax.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                        <span className="text-base font-bold text-slate-900">Grand Total</span>
-                        <span className="text-xl font-black text-slate-950 border-t-2 border-b-2 border-slate-900 py-1 px-3">
-                          ₹{currentInvoice.total.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                      );
+                    }
 
-                  {/* Footer Info */}
-                  <div className="px-8 lg:px-12 py-8 bg-slate-50 border-t border-slate-200 text-center">
-                    <p className="text-slate-650 text-sm">
-                      This is a digitally generated invoice. No signature required.
-                    </p>
-                    <p className="text-indigo-600/60 text-[10px] mt-2 tracking-widest font-bold uppercase">
-                      Powered by SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED ✨
-                    </p>
-                  </div>
+                    if (sectionName === "invoiceInfo") {
+                      return (
+                        <div 
+                          key="invoiceInfo" 
+                          className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 border bg-white text-left" 
+                          style={{ 
+                            borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1",
+                            borderRadius: `${activeTemplateConfig.design?.cornerRadius || 0}px` 
+                          }}
+                        >
+                          {activeTemplateConfig.invoiceInfo?.showInvoiceNumber && (
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">{activeTemplateConfig.invoiceInfo.labels?.invoiceNumber || "Invoice Number"}</p>
+                              <p className="font-extrabold text-sm" style={{ color: activeTemplateConfig.design?.primaryColor || "#4f46e5" }}>#{currentInvoice.invoiceNo}</p>
+                            </div>
+                          )}
+                          {activeTemplateConfig.invoiceInfo?.showInvoiceDate && (
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">{activeTemplateConfig.invoiceInfo.labels?.invoiceDate || "Invoice Date"}</p>
+                              <p className="font-bold text-slate-900">{currentInvoice.invoiceDate}</p>
+                            </div>
+                          )}
+                          {activeTemplateConfig.invoiceInfo?.showDueDate && (
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">{activeTemplateConfig.invoiceInfo.labels?.dueDate || "Due Date"}</p>
+                              <p className="font-bold text-slate-900">{currentInvoice.dueDate || currentInvoice.invoiceDate}</p>
+                            </div>
+                          )}
+                          {activeTemplateConfig.invoiceInfo?.showPaymentTerms && (
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">{activeTemplateConfig.invoiceInfo.labels?.paymentTerms || "Payment Terms"}</p>
+                              <p className="text-slate-700">{currentInvoice.paymentTerms || "Net 15 Days"}</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    if (sectionName === "items") {
+                      return (
+                        <div key="items" className="mb-6">
+                          <table 
+                            className={`w-full text-left border-collapse ${
+                              activeTemplateConfig.design?.borderStyle === 'light' 
+                                ? 'border' 
+                                : activeTemplateConfig.design?.borderStyle === 'medium' 
+                                  ? 'border-2' 
+                                  : 'border-none'
+                            }`}
+                            style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}
+                          >
+                            <thead>
+                              <tr 
+                                className="text-white text-xs font-bold"
+                                style={{ backgroundColor: activeTemplateConfig.design?.primaryColor || "#4f46e5" }}
+                              >
+                                <th className="py-2.5 px-3">#</th>
+                                {(activeTemplateConfig.items?.columns || ["item", "hsn", "quantity", "rate", "tax", "amount"]).map((col: string) => (
+                                  <th key={col} className="py-2.5 px-3 text-left">
+                                    {(activeTemplateConfig.items?.labels as any)[col] || col}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentInvoice.items.map((item, idx) => (
+                                <tr 
+                                  key={item.id || idx} 
+                                  className="border-b text-xs hover:bg-slate-50"
+                                  style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}
+                                >
+                                  <td className="py-3 px-3">{idx + 1}</td>
+                                  {(activeTemplateConfig.items?.columns || ["item", "hsn", "quantity", "rate", "tax", "amount"]).map((col: string) => {
+                                    if (col === "item") {
+                                      return (
+                                        <td key={col} className="py-3 px-3 font-bold text-left">
+                                          {item.itemName}
+                                          {item.itemCode && <p className="text-[10px] text-slate-500 font-normal">Code: {item.itemCode}</p>}
+                                        </td>
+                                      );
+                                    }
+                                    if (col === "description") return <td key={col} className="py-3 px-3 text-slate-500 text-[11px] text-left">{item.description || "-"}</td>;
+                                    if (col === "sku") return <td key={col} className="py-3 px-3 text-slate-650 text-left">{item.sku || "-"}</td>;
+                                    if (col === "hsn") return <td key={col} className="py-3 px-3 text-left">{item.hsnCode || "-"}</td>;
+                                    if (col === "quantity") return <td key={col} className="py-3 px-3 text-left">{item.quantity} {item.unit || "Pcs"}</td>;
+                                    if (col === "rate") return <td key={col} className="py-3 px-3 text-left">₹{item.pricePerUnit.toFixed(2)}</td>;
+                                    if (col === "tax") return <td key={col} className="py-3 px-3 text-left">{item.taxPercent}% GST</td>;
+                                    if (col === "amount") return <td key={col} className="py-3 px-3 font-bold text-slate-950 text-left">₹{item.amount.toFixed(2)}</td>;
+                                    return <td key={col} className="text-left">-</td>;
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    }
+
+                    if (sectionName === "tax" && activeTemplateConfig.tax?.showSummary) {
+                      return (
+                        <div key="tax" className="mb-6 flex justify-end">
+                          <div className="w-80 space-y-2 border-t pt-3" style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-500">Subtotal</span>
+                              <span className="font-semibold">₹{currentInvoice.subtotal.toFixed(2)}</span>
+                            </div>
+                            {activeTemplateConfig.tax.showTaxableAmount && (
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-500">Taxable Amount</span>
+                                <span>₹{currentInvoice.subtotal.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {activeTemplateConfig.tax.showCGST && currentInvoice.totalCgst > 0 && (
+                              <div className="flex justify-between items-center text-xs text-slate-650">
+                                <span>CGST</span>
+                                <span>₹{currentInvoice.totalCgst.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {activeTemplateConfig.tax.showSGST && currentInvoice.totalSgst > 0 && (
+                              <div className="flex justify-between items-center text-xs text-slate-650">
+                                <span>SGST</span>
+                                <span>₹{currentInvoice.totalSgst.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {activeTemplateConfig.tax.showIGST && currentInvoice.totalIgst > 0 && (
+                              <div className="flex justify-between items-center text-xs text-slate-650">
+                                <span>IGST</span>
+                                <span>₹{currentInvoice.totalIgst.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {activeTemplateConfig.tax.showTotalTax && (
+                              <div className="flex justify-between items-center text-xs border-t pt-1.5 font-bold" style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}>
+                                <span className="text-slate-650">Total Tax</span>
+                                <span>₹{currentInvoice.totalTax.toFixed(2)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center py-2 border-t" style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}>
+                              <span className="font-extrabold text-slate-900">Grand Total</span>
+                              <span className="text-base font-black" style={{ color: activeTemplateConfig.design?.primaryColor || "#4f46e5" }}>
+                                ₹{currentInvoice.total.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (sectionName === "payment" && activeTemplateConfig.payment?.showPaidAmount) {
+                      return (
+                        <div 
+                          key="payment" 
+                          className="mb-6 p-4 border text-left" 
+                          style={{ 
+                            backgroundColor: activeTemplateConfig.design?.secondaryColor || "#f8fafc", 
+                            borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1",
+                            borderRadius: `${activeTemplateConfig.design?.cornerRadius || 0}px` 
+                          }}
+                        >
+                          <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Payment Details</h4>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            {activeTemplateConfig.payment.showPaidAmount && (
+                              <div>
+                                <span className="text-slate-500 block">Paid Amount</span>
+                                <span className="font-bold text-slate-900">₹{(currentInvoice.paid || 0).toFixed(2)}</span>
+                              </div>
+                            )}
+                            {activeTemplateConfig.payment.showBalance && (
+                              <div>
+                                <span className="text-slate-500 block">Balance Due</span>
+                                <span className="font-black text-rose-600">₹{(currentInvoice.balance || 0).toFixed(2)}</span>
+                              </div>
+                            )}
+                            {activeTemplateConfig.payment.showPaymentMethod && (
+                              <div>
+                                <span className="text-slate-500 block">Method</span>
+                                <span className="text-slate-700 capitalize">{currentInvoice.paymentMethod || "Cash"}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (sectionName === "notes" && activeTemplateConfig.notes?.show) {
+                      return (
+                        <div key="notes" className="mb-6 text-left">
+                          <h5 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">{activeTemplateConfig.notes.label}</h5>
+                          <p className="text-xs text-slate-600 whitespace-pre-line">{currentInvoice.notes || activeTemplateConfig.notes.defaultText}</p>
+                        </div>
+                      );
+                    }
+
+                    if (sectionName === "terms" && activeTemplateConfig.terms?.show) {
+                      return (
+                        <div key="terms" className="mb-6 text-left">
+                          <h5 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">{activeTemplateConfig.terms.label}</h5>
+                          <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{currentInvoice.termsAndConditions || activeTemplateConfig.terms.defaultText}</p>
+                        </div>
+                      );
+                    }
+
+                    if (sectionName === "signature" && activeTemplateConfig.signature?.show) {
+                      return (
+                        <div key="signature" className="mb-6 flex flex-col items-end">
+                          <div className="text-center w-48 mt-4">
+                            {activeTemplateConfig.signature.imageUrl ? (
+                              <img 
+                                src={activeTemplateConfig.signature.imageUrl} 
+                                alt="Signature" 
+                                className="h-10 object-contain mx-auto mb-1.5" 
+                              />
+                            ) : (
+                              <div className="h-10 w-full border border-dashed rounded flex items-center justify-center text-[10px] text-slate-400 font-bold mb-1.5" style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}>
+                                [ Signature Seal ]
+                              </div>
+                            )}
+                            <div className="border-t pt-1" style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}>
+                              <p className="font-bold text-xs text-slate-900">{activeTemplateConfig.signature.name || "Authorized Signatory"}</p>
+                              {activeTemplateConfig.signature.designation && (
+                                <p className="text-[10px] text-slate-500">{activeTemplateConfig.signature.designation}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (sectionName === "footer" && activeTemplateConfig.footer?.show) {
+                      return (
+                        <div key="footer" className="mt-12 pt-4 border-t text-center text-[10px] text-slate-450" style={{ borderColor: activeTemplateConfig.design?.borderColor || "#cbd5e1" }}>
+                          <p className="leading-relaxed">{activeTemplateConfig.footer.text || "This is a digitally generated invoice. No signature required."}</p>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })}
                 </div>
               </div>
             )}
@@ -2828,6 +4133,189 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
           Powered by SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED ✨
         </p>
       </div>
+
+      {isAddCustomerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl p-6 w-full max-w-lg animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-xl font-bold text-slate-900">Add New Customer</h3>
+              <button onClick={() => setIsAddCustomerOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="mt-4 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="space-y-1.5">
+                <Label className="text-slate-800 text-sm font-semibold">Customer Name *</Label>
+                <Input
+                  value={newCustomerForm.name}
+                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Acme Corp"
+                  className="rounded-xl border-slate-200 text-slate-900"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-slate-800 text-sm font-semibold">Email</Label>
+                  <Input
+                    value={newCustomerForm.email}
+                    onChange={(e) => setNewCustomerForm(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="customer@example.com"
+                    className="rounded-xl border-slate-200 text-slate-900"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-slate-800 text-sm font-semibold">Phone</Label>
+                  <Input
+                    value={newCustomerForm.phone}
+                    onChange={(e) => setNewCustomerForm(prev => ({ ...prev, phone: e.target.value }))}
+                    placeholder="e.g. 9876543210"
+                    className="rounded-xl border-slate-200 text-slate-900"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-800 text-sm font-semibold">GSTIN</Label>
+                <Input
+                  value={newCustomerForm.gstin}
+                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, gstin: e.target.value.toUpperCase() }))}
+                  placeholder="22AAAAA1111A1Z1"
+                  className="rounded-xl border-slate-200 text-slate-900"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-slate-800 text-sm font-semibold">Place of Supply</Label>
+                  <Select
+                    value={newCustomerForm.placeOfSupply}
+                    onValueChange={(val) => setNewCustomerForm(prev => ({ ...prev, placeOfSupply: val }))}
+                  >
+                    <SelectTrigger className="rounded-xl border-slate-200 text-left text-slate-900">
+                      <SelectValue placeholder="Select Supply State" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white text-slate-900 border-slate-200 max-h-48 overflow-y-auto">
+                      {INDIAN_STATES.map(st => (
+                        <SelectItem key={st} value={st}>{st}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-slate-800 text-sm font-semibold">Payment Terms</Label>
+                  <Input
+                    value={newCustomerForm.paymentTerms}
+                    onChange={(e) => setNewCustomerForm(prev => ({ ...prev, paymentTerms: e.target.value }))}
+                    placeholder="Due on Receipt"
+                    className="rounded-xl border-slate-200 text-slate-900"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-800 text-sm font-semibold">Billing Address</Label>
+                <textarea
+                  value={newCustomerForm.billingAddress}
+                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, billingAddress: e.target.value }))}
+                  placeholder="Enter full address"
+                  className="w-full p-2.5 text-sm rounded-xl border border-slate-200 text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <Button variant="outline" onClick={() => setIsAddCustomerOpen(false)} className="rounded-full">Cancel</Button>
+              <Button onClick={handleCreateCustomer} className="rounded-full bg-slate-950 text-white hover:bg-slate-850">Create Customer</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRecordPaymentOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl p-6 w-full max-w-md animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-xl font-bold text-slate-900">Record Payment</h3>
+              <button onClick={() => setIsRecordPaymentOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="mt-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-slate-800 text-sm font-semibold">Payment Amount *</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">₹</span>
+                  <Input
+                    type="number"
+                    value={paymentForm.amount}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                    className="pl-8 rounded-xl border-slate-200 font-bold text-slate-900"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-slate-800 text-sm font-semibold">Payment Date</Label>
+                  <Input
+                    type="date"
+                    value={paymentForm.paymentDate}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, paymentDate: e.target.value }))}
+                    className="rounded-xl border-slate-200 text-xs text-slate-900"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-slate-800 text-sm font-semibold">Method</Label>
+                  <Select
+                    value={paymentForm.paymentMethod}
+                    onValueChange={(val) => setPaymentForm(prev => ({ ...prev, paymentMethod: val }))}
+                  >
+                    <SelectTrigger className="rounded-xl border-slate-200 text-slate-900">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white text-slate-900 border-slate-200">
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="upi">UPI</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      <SelectItem value="credit_card">Credit Card</SelectItem>
+                      <SelectItem value="cheque">Cheque</SelectItem>
+                      <SelectItem value="netbanking">Netbanking</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-800 text-sm font-semibold">Deposit To</Label>
+                <Input
+                  value={paymentForm.depositAccount}
+                  onChange={(e) => setPaymentForm(prev => ({ ...prev, depositAccount: e.target.value }))}
+                  placeholder="e.g. Cash/Bank"
+                  className="rounded-xl border-slate-200 text-slate-900"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-800 text-sm font-semibold">Reference Number</Label>
+                <Input
+                  value={paymentForm.referenceNumber}
+                  onChange={(e) => setPaymentForm(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                  placeholder="Transaction/Cheque ID"
+                  className="rounded-xl border-slate-200 text-slate-900"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-800 text-sm font-semibold">Notes</Label>
+                <textarea
+                  value={paymentForm.notes}
+                  onChange={(e) => setPaymentForm(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Internal receipt description"
+                  className="w-full p-2.5 text-sm rounded-xl border border-slate-200 text-slate-900 focus:outline-none"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <Button variant="outline" onClick={() => setIsRecordPaymentOpen(false)} className="rounded-full">Cancel</Button>
+              <Button onClick={handleRecordPaymentSubmit} className="rounded-full bg-slate-950 text-white hover:bg-slate-850">Apply Payment</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

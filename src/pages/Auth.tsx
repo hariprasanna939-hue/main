@@ -8,12 +8,11 @@ import {
   Mail, 
   Receipt, 
   CreditCard, 
-  PackageCheck,
   ArrowRight,
-  Star,
-  Quote,
-  Sparkles,
-  CheckCircle2
+  ShieldCheck,
+  Building2,
+  Zap,
+  Hexagon
 } from "lucide-react";
 import { VoiceButton } from "@/components/ui/VoiceButton";
 import { API_ENDPOINTS, apiRequest } from "@/lib/api";
@@ -58,50 +57,52 @@ type SubscriptionPlan = {
   popular: boolean;
 };
 
-// Enriched plans with detailed features for the right-side cards
 const subscriptionPlans = {
   trial: {
     id: "trial",
-    name: "30-Day Sandbox",
+    name: "Sandbox",
     price: 0,
     gst: 0,
     totalAmount: 0,
     duration: "30 days",
-    description: "Full access to test the platform.",
+    description: "Explore the platform with full access. No credit card required.",
     features: [
-      "Unlimited GST Invoicing",
-      "Real-time ledger sync",
+      "Test up to 50 invoices",
+      "Basic Invoice, Inventory & Bookkeeping",
       "Standard email support"
     ],
     popular: false,
   },
   monthly: {
     id: "monthly",
-    name: "Express Billing",
+    name: "Express",
     price: 1500,
     gst: 270,
     totalAmount: 1770,
     duration: "month",
-    description: "Perfect for growing small businesses.",
+    description: "Perfect for growing retail and service businesses.",
     features: [
-      "Everything in Free Trial",
-      "Payment link generation",
-      "Basic inventory tracking"
+      "Up to 5,000 Invoices",
+      "Invoice Module Access",
+      "Inventory Management"
     ],
     popular: false,
   },
   annual: {
     id: "annual",
-    name: "Pro ERP & Tax",
+    name: "Professional",
     price: 16200,
     gst: 2916,
     totalAmount: 19116,
     duration: "year",
-    description: "Save 10%. Full automation suite.",
+    description: "Full automation suite. Save 10% billed annually.",
     features: [
-      "e-Invoicing (IRN) & e-Way bills",
-      "Payroll & salary slip automation",
-      "Priority CA & tech support"
+      "Up to 25,000 Invoices",
+      "Invoice, Inventory & Bookkeeping",
+      "Tax & GST Compliance",
+      "Balance Sheet & Profit & Loss",
+      "Cash Flow Statement & Prediction",
+      "Financial Ratios"
     ],
     popular: true,
   },
@@ -112,17 +113,120 @@ const subscriptionPlans = {
     gst: 8100,
     totalAmount: 53100,
     duration: "lifetime",
-    description: "One-time cost for unlimited scale.",
+    description: "One-time cost for unlimited lifetime scale and access.",
     features: [
-      "Multi-branch & warehouse prep",
-      "Custom API & POS integrations",
-      "Dedicated account manager"
+      "Up to 100,000 Invoices",
+      "All Professional Modules Included",
+      "Payroll & Bank Reconciliation",
+      "Advanced Fraud Detection",
+      "Civil Engineering Module"
     ],
     popular: false,
   }
 } satisfies Record<string, SubscriptionPlan>;
 
 type PlanKey = keyof typeof subscriptionPlans;
+
+// Premium SaaS Pricing Card with Hover Glow Effects
+const PlanCard = ({ 
+  planKey, 
+  plan, 
+  onSelect,
+  isSummary = false
+}: { 
+  planKey: string, 
+  plan: SubscriptionPlan, 
+  onSelect?: () => void,
+  isSummary?: boolean
+}) => {
+  const isTrial = planKey === "trial";
+  const isPopular = plan.popular;
+
+  // Base inner card styles
+  const innerCardClasses = isPopular && !isSummary
+    ? "bg-[#0f172a] text-white border-[#0f172a]"
+    : "bg-white text-[#0f172a] border-[#e2e8f0]";
+
+  return (
+    <div className={`relative w-full max-w-[340px] mx-auto group transition-all duration-300 ${
+      isPopular && !isSummary ? 'scale-100 lg:scale-105 z-10' : !isSummary ? 'hover:-translate-y-2' : ''
+    }`}>
+      
+      {/* 1. Animated Glow for the Popular Plan */}
+      {isPopular && !isSummary && (
+        <div className="absolute -inset-[2px] bg-gradient-to-r from-[#3b82f6] via-[#6366f1] to-[#8b5cf6] rounded-[26px] blur-lg opacity-60 group-hover:opacity-100 transition duration-500 animate-pulse"></div>
+      )}
+
+      {/* 2. Hover Glow for Standard Plans */}
+      {!isPopular && !isSummary && (
+        <div className="absolute -inset-[1.5px] bg-gradient-to-r from-[#60a5fa] to-[#818cf8] rounded-[26px] blur-md opacity-0 group-hover:opacity-40 transition duration-500"></div>
+      )}
+
+      {/* Main Card Content */}
+      <div className={`relative flex flex-col p-6 xl:p-7 rounded-[24px] border h-full w-full shadow-sm ${innerCardClasses}`}>
+        
+        {isPopular && !isSummary && (
+          <div className="absolute -top-3.5 left-8 bg-gradient-to-r from-[#3b82f6] to-[#2563eb] text-white text-[11px] px-3.5 py-1 font-bold uppercase tracking-widest rounded-full shadow-md z-20">
+            Recommended
+          </div>
+        )}
+
+        <h3 className={`text-[20px] font-semibold tracking-tight ${isPopular && !isSummary ? 'text-white' : 'text-[#0f172a]'}`}>
+          {plan.name}
+        </h3>
+        <p className={`text-[14px] mt-2 leading-relaxed ${isPopular && !isSummary ? 'text-[#94a3b8]' : 'text-[#64748b]'}`}>
+          {plan.description}
+        </p>
+
+        <div className="mt-6 mb-6">
+          <div className="flex items-end gap-1.5">
+            <span className={`text-[40px] font-bold leading-none tracking-tighter ${isPopular && !isSummary ? 'text-white' : 'text-[#0f172a]'}`}>
+              {isTrial ? "Free" : `₹${plan.totalAmount.toLocaleString()}`}
+            </span>
+            {!isTrial && <span className={`text-[15px] font-medium mb-1.5 ${isPopular && !isSummary ? 'text-[#94a3b8]' : 'text-[#64748b]'}`}>/{plan.duration}</span>}
+          </div>
+          {!isTrial ? (
+            <div className={`text-[13px] font-medium mt-2 ${isPopular && !isSummary ? 'text-[#64748b]' : 'text-[#94a3b8]'}`}>
+              ₹{plan.price.toLocaleString()} + ₹{plan.gst.toLocaleString()} GST
+            </div>
+          ) : (
+            <div className={`text-[13px] font-medium mt-2 ${isPopular && !isSummary ? 'text-[#64748b]' : 'text-[#94a3b8]'}`}>
+              ₹0.00 due today
+            </div>
+          )}
+        </div>
+
+        {!isSummary && (
+          <button
+            onClick={onSelect}
+            className={`w-full py-2.5 rounded-xl font-semibold text-[14px] transition-all duration-200 mb-6 flex items-center justify-center gap-2 ${
+              isPopular
+                ? 'bg-white text-[#0f172a] hover:bg-[#f8fafc] shadow-[0_4px_14px_rgba(255,255,255,0.15)]'
+                : 'bg-[#f8fafc] text-[#0f172a] border border-[#e2e8f0] hover:bg-[#f1f5f9] hover:border-[#cbd5e1]'
+            }`}
+          >
+            {isTrial ? "Start free trial" : "Get started"} <ArrowRight className="w-4 h-4" />
+          </button>
+        )}
+
+        <div className={`${isSummary ? 'mt-2' : 'pt-5 border-t'} ${isPopular && !isSummary ? 'border-[#1e293b]' : 'border-[#f1f5f9]'}`}>
+          <p className={`text-[13px] font-semibold mb-4 ${isPopular && !isSummary ? 'text-[#e2e8f0]' : 'text-[#0f172a]'}`}>
+            Plan includes:
+          </p>
+          <ul className="space-y-3.5">
+            {plan.features.map((feat, idx) => (
+              <li key={idx} className="flex items-start gap-3">
+                <Check className={`w-4 h-4 mt-0.5 shrink-0 ${isPopular && !isSummary ? 'text-[#3b82f6]' : 'text-[#0f172a]'}`} strokeWidth={2.5} />
+                <span className={`text-[13.5px] leading-snug font-medium ${isPopular && !isSummary ? 'text-[#cbd5e1]' : 'text-[#475569]'}`}>{feat}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  );
+};
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -132,6 +236,7 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [view, setView] = useState<"signin" | "signup">("signin");
+  const [signupStep, setSignupStep] = useState<1 | 2>(1);
   const [selectedPlan, setSelectedPlan] = useState<PlanKey>("trial");
 
   const [email, setEmail] = useState("");
@@ -145,10 +250,16 @@ const Auth = () => {
     const tab = params.get("tab");
     const plan = params.get("plan") as PlanKey | null;
 
-    if (tab === "signup" || tab === "signin") setView(tab);
+    if (tab === "signup" || tab === "signin") {
+      setView(tab);
+      if (tab === "signup") setSignupStep(1);
+    }
     if (plan && plan in subscriptionPlans) {
       setSelectedPlan(plan);
-      if (plan === "trial") setView("signup");
+      if (plan === "trial") {
+        setView("signup");
+        setSignupStep(1);
+      }
     }
   }, [location.search]);
 
@@ -175,9 +286,10 @@ const Auth = () => {
         toast({ 
           variant: "destructive", 
           title: "Subscription Required", 
-          description: "Your trial has expired. Please subscribe to continue accessing your ledgers." 
+          description: "Your trial has expired. Please subscribe to continue." 
         });
         setView("signup");
+        setSignupStep(1);
         setSelectedPlan("monthly");
         return;
       }
@@ -200,7 +312,6 @@ const Auth = () => {
     if (!email || !password) {
       return toast({ variant: "destructive", title: "Required", description: "Email and password are required." });
     }
-    
     setPaymentLoading(true);
 
     try {
@@ -214,7 +325,7 @@ const Auth = () => {
         if (!trialRes.ok) throw new Error(trialData.message);
 
         localStorage.setItem("token", trialData.token);
-        toast({ title: "Welcome!", description: "Initializing your billing workspace..." });
+        toast({ title: "Welcome!", description: "Initializing your workspace..." });
         setTimeout(() => navigate("/dashboard"), 500);
         return;
       }
@@ -225,25 +336,6 @@ const Auth = () => {
       });
       const orderData = await orderRes.json();
       if (!orderRes.ok) throw new Error(orderData.message);
-
-      if (orderData.devMode) {
-        setLoading(true);
-        const verifyRes = await apiRequest(API_ENDPOINTS.VERIFY_PAYMENT, {
-          method: "POST",
-          body: JSON.stringify({
-            razorpay_order_id: orderData.orderId,
-            razorpay_payment_id: "dev_payment_" + Date.now(),
-            razorpay_signature: "dev_signature",
-            email, password, name: name || email.split('@')[0], plan: selectedPlan, role: signupRole
-          }),
-        });
-        const verifyData = await verifyRes.json();
-        if (!verifyRes.ok) throw new Error(verifyData.message);
-        
-        localStorage.setItem("token", verifyData.token);
-        setTimeout(() => navigate("/dashboard"), 500);
-        return;
-      }
 
       const options: RazorpayOptions = {
         key: orderData.key,
@@ -273,7 +365,7 @@ const Auth = () => {
         },
         modal: { ondismiss: () => setPaymentLoading(false) },
         prefill: { email, name: name || email.split('@')[0] },
-        theme: { color: "#006aff" },
+        theme: { color: "#0f172a" },
       };
       new window.Razorpay(options).open();
     } catch (err) {
@@ -286,442 +378,289 @@ const Auth = () => {
   const planEntries = Object.entries(subscriptionPlans) as Array<[PlanKey, SubscriptionPlan]>;
 
   return (
-    <div className="min-h-screen w-full flex bg-white font-sans text-[#333] selection:bg-[#006aff]/20 selection:text-[#006aff]">
-      
-      {/* LEFT SIDE - AUTHENTICATION FORM */}
-      <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col min-h-screen relative z-20 bg-white shadow-[10px_0_30px_rgba(0,0,0,0.03)] border-r border-[#eee]">
+    <div className="min-h-screen w-full bg-[#f8fafc] font-sans text-[#0f172a] selection:bg-[#3b82f6]/20 selection:text-[#2563eb]">
+      <AnimatePresence mode="wait">
         
-        {/* Header */}
-        <div className="px-8 py-6 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="w-8 h-8 bg-[#006aff] rounded-[6px] flex items-center justify-center text-white font-bold text-lg shadow-sm">
-              S
-            </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-[16px] tracking-tight text-[#111] leading-none">SHREE ANDAL AI</span>
-              <span className="text-[10px] text-[#006aff] font-bold uppercase tracking-wider mt-0.5">Billing & Accounts</span>
-            </div>
-          </div>
+        {view === "signup" && signupStep === 1 ? (
           
-          {/* Mobile Toggle */}
-          <div className="lg:hidden text-[13px] font-medium">
-            {view === "signin" ? (
-              <span className="text-[#555]">New? <button onClick={() => {setView("signup"); setEmail(""); setPassword("");}} className="text-[#006aff] hover:underline font-semibold">Sign Up</button></span>
-            ) : (
-              <span className="text-[#555]">Registered? <button onClick={() => {setView("signin"); setEmail(""); setPassword("");}} className="text-[#006aff] hover:underline font-semibold">Sign In</button></span>
-            )}
-          </div>
-        </div>
+          /* =========================================
+             STEP 1: FULL SCREEN PRICING PLAN SELECTOR
+             ========================================= */
+          <motion.div 
+            key="fullscreen-pricing"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full min-h-screen flex flex-col py-12 md:py-20 relative overflow-x-hidden"
+          >
+            {/* Minimal Header */}
+            <div className="absolute top-6 left-6 md:left-10 flex items-center gap-2.5 z-30">
+              <div className="w-9 h-9 bg-[#0f172a] rounded-lg flex items-center justify-center text-white shadow-md">
+                <Hexagon className="w-5 h-5 fill-current" />
+              </div>
+              <span className="font-bold text-[18px] tracking-tight text-[#0f172a]">SHREE ANDAL AI</span>
+            </div>
 
-        {/* Form Area */}
-        <div className="flex-1 flex flex-col justify-center px-8 md:px-14 lg:px-16 pb-12 w-full max-w-[560px] mx-auto overflow-y-auto [&::-webkit-scrollbar]:hidden">
-          
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={view}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              transition={{ duration: 0.25, ease: "easeInOut" }}
-              className="w-full"
-            >
-              <div className="mb-8">
-                <h1 className="text-[26px] font-bold text-[#111] tracking-tight mb-2">
-                  {view === "signin" ? "Sign in to your portal" : "Create your account"}
-                </h1>
-                <p className="text-[14px] text-[#555] leading-relaxed">
-                  {view === "signin" 
-                    ? "Manage your invoices, track receivables, and automate your GST compliance." 
-                    : "Create professional GST invoices & manage inventory in under 2 minutes. No credit card required."}
-                </p>
+            <div className="absolute top-6 right-6 md:right-10 text-[14px] font-medium z-30 flex items-center gap-3">
+              <span className="text-[#64748b] hidden sm:inline">Already have an account?</span>
+              <button onClick={() => {setView("signin"); setEmail(""); setPassword("");}} className="text-[#0f172a] font-semibold hover:text-[#3b82f6] transition-colors">Sign in</button>
+            </div>
+
+            {/* Title Section */}
+            <div className="text-center mb-12 md:mb-16 px-6 mt-16 md:mt-4 relative z-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#e0e7ff] text-[#3730a3] text-[12px] font-bold uppercase tracking-widest mb-6">
+                <Zap className="w-3.5 h-3.5 fill-current" /> Scalable Pricing
+              </div>
+              <h1 className="text-[36px] md:text-[48px] font-bold text-[#0f172a] leading-tight mb-4 tracking-tighter">
+                Choose the right plan for your business
+              </h1>
+              <p className="text-[16px] md:text-[18px] text-[#64748b] max-w-2xl mx-auto font-medium">
+                Transparent pricing with no hidden fees. Upgrade, downgrade, or cancel anytime.
+              </p>
+            </div>
+
+            {/* Pricing Grid */}
+            <div className="w-full max-w-[1400px] mx-auto px-6 z-10">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 xl:gap-8 items-start justify-center">
+                {planEntries.map(([key, plan]) => (
+                  <PlanCard 
+                    key={key} 
+                    planKey={key} 
+                    plan={plan} 
+                    onSelect={() => {
+                      setSelectedPlan(key as PlanKey);
+                      setSignupStep(2);
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+        ) : (
+
+          /* =========================================
+             STEP 2 OR SIGN IN: SPLIT SCREEN LAYOUT
+             ========================================= */
+          <motion.div 
+            key="split-view"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="flex w-full min-h-screen bg-white"
+          >
+            {/* LEFT SIDE - FORM */}
+            <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col min-h-screen relative z-20 bg-white border-r border-[#e2e8f0]">
+              
+              <div className="px-8 md:px-12 py-8 flex items-center justify-between">
+                <div className="flex items-center gap-2.5 cursor-pointer">
+                  <div className="w-9 h-9 bg-[#0f172a] rounded-lg flex items-center justify-center text-white">
+                    <Hexagon className="w-5 h-5 fill-current" />
+                  </div>
+                  <span className="font-bold text-[18px] tracking-tight text-[#0f172a]">SHREE ANDAL AI</span>
+                </div>
+                
+                <div className="lg:hidden text-[14px] font-medium">
+                  {view === "signin" ? (
+                    <span className="text-[#64748b]">New? <button onClick={() => {setView("signup"); setSignupStep(1); setEmail(""); setPassword("");}} className="text-[#0f172a] font-semibold hover:text-[#3b82f6]">Sign up</button></span>
+                  ) : (
+                    <span className="text-[#64748b]">Registered? <button onClick={() => {setView("signin"); setEmail(""); setPassword("");}} className="text-[#0f172a] font-semibold hover:text-[#3b82f6]">Sign in</button></span>
+                  )}
+                </div>
               </div>
 
-              {view === "signin" ? (
-                /* --- SIGN IN FORM --- */
-                <div className="flex flex-col h-full">
-                  <form onSubmit={handleSignIn} className="space-y-5">
-                    {/* Role Selector Grid */}
-                    <div>
-                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Choose portal access</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setLoginRole("admin")}
-                          className={`p-3 rounded-[4px] border text-center transition-all ${
-                            loginRole === "admin"
-                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
-                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
-                          }`}
-                        >
-                          <div className="text-[13px]">Admin Portal</div>
-                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Full CFO access</div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLoginRole("instore")}
-                          className={`p-3 rounded-[4px] border text-center transition-all ${
-                            loginRole === "instore"
-                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
-                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
-                          }`}
-                        >
-                          <div className="text-[13px]">In-Store POS</div>
-                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Cashier access</div>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Business email address</label>
-                      <div className="relative flex items-center">
-                        <Mail className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className="w-full h-11 pl-10 pr-10 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
-                          placeholder="name@company.com"
-                          required
-                        />
-                        <div className="absolute right-2">
-                          <VoiceButton onTranscript={setEmail} onClear={() => setEmail("")} size="sm" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <label className="block text-[13px] font-bold text-[#333]">Password</label>
-                        <a href="#" className="text-[12px] font-semibold text-[#006aff] hover:underline">Forgot password?</a>
-                      </div>
-                      <div className="relative flex items-center">
-                        <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full h-11 pl-10 pr-4 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
-                          placeholder="••••••••"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full h-11 mt-2 bg-[#006aff] hover:bg-[#005cdb] text-white font-bold text-[15px] rounded-[4px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70 shadow-sm"
-                    >
-                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
-                    </button>
-                  </form>
-
-                  {/* START FREE TRIAL PROMO BOX (Under Sign In) */}
-                  <div className="mt-8 pt-7 border-t border-[#eee]">
-                    <div className="bg-[#f4f9ff] border border-[#cce3ff] rounded-[6px] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_2px_10px_rgba(0,106,255,0.05)]">
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <Sparkles className="w-4 h-4 text-[#006aff]" />
-                          <h4 className="text-[14px] font-bold text-[#111]">New to SHREE ANDAL AI?</h4>
-                        </div>
-                        <p className="text-[13px] text-[#555] leading-snug">
-                          Join thousands of businesses managing their GST billing and accounting with us.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setView("signup");
-                          setSelectedPlan("trial");
-                          setEmail("");
-                          setPassword("");
-                        }}
-                        className="shrink-0 w-full sm:w-auto px-5 py-2.5 bg-white border border-[#006aff] text-[#006aff] text-[13px] font-bold rounded-[4px] hover:bg-[#006aff] hover:text-white transition-all shadow-sm"
-                      >
-                        Start Free Trial
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* --- SIGN UP FORM --- */
-                <form onSubmit={handleSignUp} className="space-y-6">
-                  
-                  {/* Small Plan Indicator (Left side representation) */}
-                  <div>
-                    <label className="block text-[13px] font-bold text-[#333] mb-2">Selected Plan</label>
-                    <div className="p-3 border border-[#006aff] bg-[#f2f8ff] rounded-[6px] flex items-center justify-between shadow-[0_0_0_1px_rgba(0,106,255,0.2)]">
-                      <div>
-                        <h4 className="text-[13px] font-bold text-[#006aff]">{subscriptionPlans[selectedPlan].name}</h4>
-                        <p className="text-[11px] text-[#006aff]/80 font-medium">{subscriptionPlans[selectedPlan].description}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[16px] font-black text-[#111]">{selectedPlan === "trial" ? "Free" : `₹${subscriptionPlans[selectedPlan].totalAmount.toLocaleString()}`}</p>
-                        {selectedPlan !== "trial" && <p className="text-[10px] text-[#777] uppercase font-bold">/{subscriptionPlans[selectedPlan].duration}</p>}
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-[#777] mt-2 block lg:hidden">* Swipe or scroll on desktop to compare other plans.</p>
-                  </div>
-
-                  <div className="space-y-4 pt-2">
-                    {/* Role Selector Grid */}
-                    <div>
-                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Choose your business role</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setSignupRole("admin")}
-                          className={`p-3 rounded-[4px] border text-center transition-all ${
-                            signupRole === "admin"
-                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
-                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
-                          }`}
-                        >
-                          <div className="text-[13px]">Admin Portal</div>
-                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Management & P&L</div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSignupRole("instore")}
-                          className={`p-3 rounded-[4px] border text-center transition-all ${
-                            signupRole === "instore"
-                              ? "border-[#006aff] bg-[#f2f8ff] text-[#006aff] font-bold"
-                              : "border-[#ccc] bg-white text-[#555] font-semibold hover:border-[#aaa]"
-                          }`}
-                        >
-                          <div className="text-[13px]">In-Store POS</div>
-                          <div className="text-[10px] opacity-75 font-normal mt-0.5">Cashier Billing</div>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Business email address</label>
-                      <div className="relative flex items-center">
-                        <Mail className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className="w-full h-11 pl-10 pr-10 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
-                          placeholder="name@company.com"
-                          required
-                        />
-                        <div className="absolute right-2">
-                          <VoiceButton onTranscript={setEmail} onClear={() => setEmail("")} size="sm" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[13px] font-bold text-[#333] mb-1.5">Password</label>
-                      <div className="relative flex items-center">
-                        <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#999]" />
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full h-11 pl-10 pr-4 bg-white border border-[#ccc] rounded-[4px] text-[15px] focus:border-[#006aff] focus:ring-1 focus:ring-[#006aff] outline-none transition-all placeholder:text-[#aaa]"
-                          placeholder="Create a strong password"
-                          required
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading || paymentLoading}
-                    className={`w-full h-11 text-white font-bold text-[15px] rounded-[4px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70 shadow-sm mt-2 ${
-                      selectedPlan === 'trial' ? 'bg-[#006aff] hover:bg-[#005cdb]' : 'bg-[#00b365] hover:bg-[#009c58]'
-                    }`}
+              <div className="flex-1 flex flex-col justify-center px-8 md:px-12 lg:px-16 pb-16 w-full max-w-[560px] mx-auto overflow-y-auto [&::-webkit-scrollbar]:hidden">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={view}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 10 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="w-full flex flex-col"
                   >
-                    {paymentLoading ? (
-                      <><Loader2 className="w-5 h-5 animate-spin" /> Processing Payment...</>
-                    ) : loading ? (
-                      <><Loader2 className="w-5 h-5 animate-spin" /> Provisioning Account...</>
-                    ) : selectedPlan === "trial" ? (
-                      "Start 30-Day Free Trial"
-                    ) : (
-                      <><Lock className="w-4 h-4" /> Pay ₹{subscriptionPlans[selectedPlan].totalAmount.toLocaleString()} securely</>
-                    )}
-                  </button>
-
-                  <p className="text-[11.5px] text-[#777] text-center mt-3 font-medium">
-                    By proceeding, you agree to our <a href="#" className="text-[#006aff] hover:underline">Terms of Service</a> & <a href="#" className="text-[#006aff] hover:underline">Privacy Policy</a>.
-                  </p>
-                </form>
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* RIGHT SIDE - DYNAMIC SHOWCASE / PRICING PANEL (Desktop Only) */}
-      <div className="hidden lg:flex flex-1 flex-col bg-[#f9fafd] relative overflow-hidden">
-        
-        {/* Toggle link Top Right */}
-        <div className="absolute top-6 right-8 text-[14px] font-medium z-30 flex items-center gap-3 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full border border-[#eee] shadow-sm">
-          {view === "signin" ? (
-            <>
-              <span className="text-[#555]">Need billing software?</span>
-              <button onClick={() => {setView("signup"); setEmail(""); setPassword("");}} className="text-[#006aff] font-bold hover:underline">Start Free Trial</button>
-            </>
-          ) : (
-            <>
-              <span className="text-[#555]">Already registered?</span>
-              <button onClick={() => {setView("signin"); setEmail(""); setPassword("");}} className="text-[#006aff] font-bold hover:underline">Sign In</button>
-            </>
-          )}
-        </div>
-
-        {/* Ambient background accents */}
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-bl from-[#dbebff] to-transparent rounded-full opacity-60 translate-x-[30%] -translate-y-[30%] pointer-events-none z-0" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-[#fde9e8] to-transparent rounded-full opacity-50 -translate-x-[30%] translate-y-[30%] pointer-events-none z-0" />
-
-        <AnimatePresence mode="wait">
-          {view === "signin" ? (
-            /* --- RIGHT SIDE: FEATURE SHOWCASE (FOR SIGN IN) --- */
-            <motion.div 
-              key="showcase"
-              initial={{ opacity: 0, filter: "blur(4px)" }}
-              animate={{ opacity: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, filter: "blur(4px)" }}
-              transition={{ duration: 0.3 }}
-              className="flex-1 flex flex-col justify-center items-center p-12 z-10 w-full max-w-[600px] mx-auto"
-            >
-              <div className="flex items-center gap-2 mb-8 bg-white px-4 py-2 rounded-full shadow-sm border border-[#eee]">
-                <div className="flex text-[#f59e0b]">
-                  <Star className="w-4 h-4 fill-current" />
-                  <Star className="w-4 h-4 fill-current" />
-                  <Star className="w-4 h-4 fill-current" />
-                  <Star className="w-4 h-4 fill-current" />
-                  <Star className="w-4 h-4 fill-current" />
-                </div>
-                <span className="text-[12px] font-bold text-[#333]">Trusted by 10,000+ businesses</span>
-              </div>
-
-              <div className="text-center mb-10">
-                <h2 className="text-[32px] font-black text-[#111] leading-tight mb-4 tracking-tight">
-                  Automated Billing &<br />e-Invoicing Software
-                </h2>
-                <p className="text-[16px] text-[#555] leading-relaxed font-medium">
-                  Create professional GST invoices, track outstanding receivables, and automate customer payment links instantly.
-                </p>
-              </div>
-
-              <div className="space-y-4 w-full">
-                <div className="bg-white p-5 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#eee] flex gap-4 items-start hover:-translate-y-1 transition-transform duration-300">
-                  <div className="w-[42px] h-[42px] rounded-lg bg-[#e8f2ff] flex items-center justify-center shrink-0">
-                    <Receipt className="w-5 h-5 text-[#006aff]" />
-                  </div>
-                  <div>
-                    <h4 className="text-[15px] font-bold text-[#222] mb-1">Instant GST & e-Invoicing</h4>
-                    <p className="text-[13px] text-[#666] leading-relaxed">Generate IRN e-invoices, e-way bills, and automated tax calculations (CGST, SGST, IGST) in seconds.</p>
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#eee] flex gap-4 items-start hover:-translate-y-1 transition-transform duration-300">
-                  <div className="w-[42px] h-[42px] rounded-lg bg-[#fde9e8] flex items-center justify-center shrink-0">
-                    <CreditCard className="w-5 h-5 text-[#f0483e]" />
-                  </div>
-                  <div>
-                    <h4 className="text-[15px] font-bold text-[#222] mb-1">Payment Links & Reminders</h4>
-                    <p className="text-[13px] text-[#666] leading-relaxed">Attach online payment links directly to bills and send automated payment reminders to get paid 3x faster.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-10 relative">
-                <Quote className="absolute -top-3 -left-4 w-8 h-8 text-[#006aff] opacity-10 rotate-180" />
-                <p className="text-[14px] italic text-[#555] font-medium leading-relaxed text-center px-6">
-                  "Switching to this platform completely changed how we handle our monthly billing. The automated GST reports alone save us hours every week."
-                </p>
-                <p className="text-[12px] font-bold text-[#333] text-center mt-3">— Finance Director, TechCorp India</p>
-              </div>
-            </motion.div>
-          ) : (
-            /* --- RIGHT SIDE: DETAILED PRICING GRID (FOR SIGN UP) --- */
-            <motion.div 
-              key="pricing"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex-1 flex flex-col justify-center items-center p-10 z-10 w-full max-w-[800px] mx-auto overflow-y-auto [&::-webkit-scrollbar]:hidden"
-            >
-              <div className="text-center mb-8">
-                <h2 className="text-[28px] font-black text-[#111] leading-tight mb-2 tracking-tight">
-                  Transparent pricing. No hidden fees.
-                </h2>
-                <p className="text-[15px] text-[#555] font-medium">
-                  Select a plan that fits your business needs. Your selection on the right automatically updates the form on the left.
-                </p>
-              </div>
-
-              {/* 2x2 Pricing Grid */}
-              <div className="grid grid-cols-2 gap-4 w-full">
-                {planEntries.map(([key, plan]) => {
-                  const isSelected = selectedPlan === key;
-                  return (
-                    <div
-                      key={key}
-                      onClick={() => setSelectedPlan(key as PlanKey)}
-                      className={`relative flex flex-col p-5 bg-white border-2 rounded-[12px] cursor-pointer transition-all duration-200 ${
-                        isSelected 
-                          ? 'border-[#006aff] shadow-[0_8px_30px_rgba(0,106,255,0.12)] -translate-y-1' 
-                          : 'border-transparent shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.06)] hover:border-[#dbebff]'
-                      }`}
-                    >
-                      {/* Popular Badge */}
-                      {plan.popular && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#111] text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full shadow-md z-10">
-                          Most Popular
+                    {view === "signin" ? (
+                      /* --- SIGN IN FORM --- */
+                      <div className="flex flex-col h-full">
+                        <div className="mb-10">
+                          <h1 className="text-[30px] font-bold text-[#0f172a] tracking-tight mb-2">Welcome back</h1>
+                          <p className="text-[15px] text-[#64748b] font-medium">Sign in to your account to manage your business ledgers.</p>
                         </div>
-                      )}
-                      
-                      {/* Plan Header */}
-                      <div className="flex items-center justify-between mb-2 mt-2">
-                        <h3 className={`text-[15px] font-bold ${isSelected ? 'text-[#006aff]' : 'text-[#222]'}`}>{plan.name}</h3>
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-[#006aff] bg-[#006aff]' : 'border-[#ddd]'}`}>
-                          {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
-                        </div>
-                      </div>
-                      
-                      <p className="text-[12px] text-[#666] mb-4 h-[36px]">{plan.description}</p>
-                      
-                      {/* Price Section */}
-                      <div className="mb-4 pb-4 border-b border-[#eee]">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[26px] font-black text-[#111] tracking-tight">
-                            {key === "trial" ? "Free" : `₹${(plan.totalAmount).toLocaleString()}`}
-                          </span>
-                          {key !== "trial" && <span className="text-[12px] text-[#777] font-bold uppercase">/{plan.duration}</span>}
-                        </div>
-                        {key !== "trial" && (
-                          <div className="text-[10px] font-bold text-[#888] mt-1">
-                            ₹{plan.price.toLocaleString()} + ₹{plan.gst.toLocaleString()} GST
+                        <form onSubmit={handleSignIn} className="space-y-5">
+                          <div>
+                            <label className="block text-[13px] font-bold text-[#333] mb-2 uppercase tracking-wide">Portal Access</label>
+                            <div className="grid grid-cols-2 gap-3 bg-[#f8fafc] p-1.5 rounded-[12px] border border-[#e2e8f0]">
+                              <button type="button" onClick={() => setLoginRole("admin")} className={`p-2.5 rounded-[8px] text-center transition-all ${loginRole === "admin" ? "bg-white text-[#0f172a] font-bold shadow-sm" : "text-[#64748b] font-medium hover:text-[#0f172a]"}`}>
+                                <div className="text-[13px]">Admin Portal</div>
+                              </button>
+                              <button type="button" onClick={() => setLoginRole("instore")} className={`p-2.5 rounded-[8px] text-center transition-all ${loginRole === "instore" ? "bg-white text-[#0f172a] font-bold shadow-sm" : "text-[#64748b] font-medium hover:text-[#0f172a]"}`}>
+                                <div className="text-[13px]">In-Store POS</div>
+                              </button>
+                            </div>
                           </div>
-                        )}
+                          <div>
+                            <label className="block text-[13px] font-bold text-[#333] mb-2 uppercase tracking-wide">Work Email</label>
+                            <div className="relative flex items-center">
+                              <Mail className="absolute left-3.5 w-[18px] h-[18px] text-[#94a3b8]" />
+                              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-12 pl-10 pr-10 bg-white border border-[#cbd5e1] rounded-[10px] text-[15px] focus:border-[#3b82f6] focus:ring-4 focus:ring-[#3b82f6]/10 outline-none transition-all placeholder:text-[#94a3b8]" placeholder="name@company.com" required />
+                              <div className="absolute right-2"><VoiceButton onTranscript={setEmail} onClear={() => setEmail("")} size="sm" /></div>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-[13px] font-bold text-[#333] uppercase tracking-wide">Password</label>
+                              <a href="#" className="text-[13px] font-semibold text-[#3b82f6] hover:text-[#2563eb]">Forgot password?</a>
+                            </div>
+                            <div className="relative flex items-center">
+                              <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#94a3b8]" />
+                              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full h-12 pl-10 pr-4 bg-white border border-[#cbd5e1] rounded-[10px] text-[15px] focus:border-[#3b82f6] focus:ring-4 focus:ring-[#3b82f6]/10 outline-none transition-all placeholder:text-[#94a3b8]" placeholder="••••••••" required />
+                            </div>
+                          </div>
+                          <button type="submit" disabled={loading} className="w-full h-12 mt-6 bg-[#0f172a] hover:bg-[#1e293b] text-white font-semibold text-[15px] rounded-[10px] transition-colors flex items-center justify-center gap-2 shadow-sm">
+                            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+                          </button>
+                        </form>
                       </div>
-
-                      {/* Features List */}
-                      <ul className="space-y-2.5 flex-1">
-                        {plan.features.map((feat, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <CheckCircle2 className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isSelected ? 'text-[#006aff]' : 'text-[#00b365]'}`} />
-                            <span className="text-[12px] font-medium text-[#444] leading-tight">{feat}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  );
-                })}
+                    ) : (
+                      /* --- SIGN UP: STEP 2 (ACCOUNT DETAILS) --- */
+                      <div className="flex flex-col h-full">
+                        <button onClick={() => setSignupStep(1)} className="text-[13px] font-semibold text-[#64748b] hover:text-[#0f172a] flex items-center gap-1.5 mb-8 transition-colors w-fit group">
+                          <ArrowRight className="w-4 h-4 rotate-180 group-hover:-translate-x-1 transition-transform" /> Back to pricing
+                        </button>
+                        <div className="mb-10">
+                          <h1 className="text-[30px] font-bold text-[#0f172a] tracking-tight mb-2">Create your account</h1>
+                          <p className="text-[15px] text-[#64748b] font-medium">Complete your <span className="font-bold text-[#0f172a]">{subscriptionPlans[selectedPlan].name}</span> plan setup.</p>
+                        </div>
+                        <form onSubmit={handleSignUp} className="space-y-5">
+                          <div>
+                            <label className="block text-[13px] font-bold text-[#333] mb-2 uppercase tracking-wide">Business Role</label>
+                            <div className="grid grid-cols-2 gap-3 bg-[#f8fafc] p-1.5 rounded-[12px] border border-[#e2e8f0]">
+                              <button type="button" onClick={() => setSignupRole("admin")} className={`p-2.5 rounded-[8px] text-center transition-all ${signupRole === "admin" ? "bg-white text-[#0f172a] font-bold shadow-sm" : "text-[#64748b] font-medium hover:text-[#0f172a]"}`}>
+                                <div className="text-[13px]">Admin Portal</div>
+                              </button>
+                              <button type="button" onClick={() => setSignupRole("instore")} className={`p-2.5 rounded-[8px] text-center transition-all ${signupRole === "instore" ? "bg-white text-[#0f172a] font-bold shadow-sm" : "text-[#64748b] font-medium hover:text-[#0f172a]"}`}>
+                                <div className="text-[13px]">In-Store POS</div>
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[13px] font-bold text-[#333] mb-2 uppercase tracking-wide">Work Email</label>
+                            <div className="relative flex items-center">
+                              <Mail className="absolute left-3.5 w-[18px] h-[18px] text-[#94a3b8]" />
+                              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-12 pl-10 pr-10 bg-white border border-[#cbd5e1] rounded-[10px] text-[15px] focus:border-[#3b82f6] focus:ring-4 focus:ring-[#3b82f6]/10 outline-none transition-all placeholder:text-[#94a3b8]" placeholder="name@company.com" required />
+                              <div className="absolute right-2"><VoiceButton onTranscript={setEmail} onClear={() => setEmail("")} size="sm" /></div>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[13px] font-bold text-[#333] mb-2 uppercase tracking-wide">Secure Password</label>
+                            <div className="relative flex items-center">
+                              <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#94a3b8]" />
+                              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full h-12 pl-10 pr-4 bg-white border border-[#cbd5e1] rounded-[10px] text-[15px] focus:border-[#3b82f6] focus:ring-4 focus:ring-[#3b82f6]/10 outline-none transition-all placeholder:text-[#94a3b8]" placeholder="Create a strong password" required />
+                            </div>
+                          </div>
+                          <button type="submit" disabled={loading || paymentLoading} className="w-full h-12 mt-6 bg-[#0f172a] hover:bg-[#1e293b] text-white font-semibold text-[15px] rounded-[10px] transition-colors flex items-center justify-center gap-2 shadow-sm">
+                            {paymentLoading ? <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</> : loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Setting up workspace...</> : selectedPlan === "trial" ? "Start Free Trial" : <><Lock className="w-4 h-4" /> Pay ₹{subscriptionPlans[selectedPlan].totalAmount.toLocaleString()} securely</>}
+                          </button>
+                          <p className="text-[13px] text-[#64748b] text-center mt-4 font-medium">By registering, you agree to our <a href="#" className="text-[#0f172a] font-semibold hover:underline">Terms</a> & <a href="#" className="text-[#0f172a] font-semibold hover:underline">Privacy Policy</a>.</p>
+                        </form>
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+            </div>
 
+            {/* RIGHT SIDE - SHOWCASE OR SUMMARY (Desktop Only) */}
+            <div className="hidden lg:flex flex-1 flex-col bg-[#f8fafc] relative overflow-hidden">
+              
+              <div className="absolute top-8 right-12 text-[14px] font-medium z-30 flex items-center gap-3">
+                {view === "signin" ? (
+                  <>
+                    <span className="text-[#64748b]">Need billing software?</span>
+                    <button onClick={() => {setView("signup"); setSignupStep(1); setEmail(""); setPassword("");}} className="text-[#0f172a] font-semibold hover:text-[#3b82f6] transition-colors">View Pricing</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[#64748b]">Already have an account?</span>
+                    <button onClick={() => {setView("signin"); setEmail(""); setPassword("");}} className="text-[#0f172a] font-semibold hover:text-[#3b82f6] transition-colors">Sign in</button>
+                  </>
+                )}
+              </div>
+
+              <AnimatePresence mode="wait">
+                {view === "signin" ? (
+                  /* --- SHOWCASE FOR SIGN IN --- */
+                  <motion.div 
+                    key="showcase"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.4 }}
+                    className="flex-1 flex flex-col justify-center items-start px-20 xl:px-32 z-10 w-full"
+                  >
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#dcfce7] text-[#166534] text-[12px] font-bold uppercase tracking-widest mb-6">
+                      <ShieldCheck className="w-4 h-4" /> ISO 27001 Certified
+                    </div>
+                    
+                    <h2 className="text-[40px] xl:text-[48px] font-bold text-[#0f172a] leading-tight mb-6 tracking-tighter">
+                      Enterprise-grade<br/>billing engine.
+                    </h2>
+                    <p className="text-[18px] text-[#64748b] leading-relaxed font-medium mb-12 max-w-md">
+                      Streamline your financial operations with instant GST compliance, automated payment links, and real-time ledger sync.
+                    </p>
+
+                    <div className="space-y-6 w-full max-w-md">
+                      <div className="flex gap-4 items-start">
+                        <div className="w-12 h-12 rounded-xl bg-white shadow-sm border border-[#e2e8f0] flex items-center justify-center shrink-0">
+                          <Receipt className="w-6 h-6 text-[#0f172a]" />
+                        </div>
+                        <div>
+                          <h4 className="text-[16px] font-bold text-[#0f172a] mb-1">Automated e-Invoicing</h4>
+                          <p className="text-[14px] text-[#64748b] leading-relaxed font-medium">Generate IRN e-invoices and e-way bills with one click, perfectly synced with GST portals.</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-4 items-start">
+                        <div className="w-12 h-12 rounded-xl bg-white shadow-sm border border-[#e2e8f0] flex items-center justify-center shrink-0">
+                          <CreditCard className="w-6 h-6 text-[#0f172a]" />
+                        </div>
+                        <div>
+                          <h4 className="text-[16px] font-bold text-[#0f172a] mb-1">Smart Collections</h4>
+                          <p className="text-[14px] text-[#64748b] leading-relaxed font-medium">Reduce days sales outstanding (DSO) by 40% with embedded payment links and auto-reminders.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : (
+                  /* --- PLAN SUMMARY FOR SIGN UP (STEP 2) --- */
+                  <motion.div 
+                    key="plan-summary"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className="flex-1 flex flex-col justify-center items-center p-12 z-10 w-full"
+                  >
+                    <div className="mb-10 text-center">
+                      <h3 className="text-[28px] font-bold text-[#0f172a] mb-2 tracking-tight">Excellent Choice</h3>
+                      <p className="text-[16px] text-[#64748b] font-medium">You're seconds away from upgrading your business.</p>
+                    </div>
+                    
+                    <div className="pointer-events-none w-full max-w-[380px]">
+                      <PlanCard 
+                        planKey={selectedPlan} 
+                        plan={subscriptionPlans[selectedPlan]} 
+                        isSummary={true} 
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -1,11 +1,11 @@
-
 import express from "express";
 import mongoose from "mongoose";
 
 const router = express.Router();
 
-// ✅ Project Task Schema
+// ✅ Project Task Schema with tenant isolation
 const taskSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     projectName: { type: String, required: true },
     projectId: { type: String, required: true },
     projectDescription: { type: String },
@@ -40,18 +40,23 @@ const Project = mongoose.model("Project", taskSchema);
 // ✅ POST route to create/update project schedule
 router.post("/create", async (req, res) => {
     try {
-        const projectData = req.body;
+        const projectData = {
+            ...req.body,
+            userId: req.user.id
+        };
 
         // Clean up dependency names (remove whitespace and standardize)
-        projectData.tasks = projectData.tasks.map(task => ({
-            ...task,
-            dependencies: task.dependencies.map(dep => 
-                dep.trim().replace(/\s+/g, ' ').replace(/=/g, '-')
-            )
-        }));
+        if (projectData.tasks) {
+            projectData.tasks = projectData.tasks.map(task => ({
+                ...task,
+                dependencies: (task.dependencies || []).map(dep => 
+                    dep.trim().replace(/\s+/g, ' ').replace(/=/g, '-')
+                )
+            }));
+        }
 
         // Perform CPM calculations on the backend
-        const tasksWithCPM = calculateCPM(projectData.tasks);
+        const tasksWithCPM = calculateCPM(projectData.tasks || []);
         projectData.tasks = tasksWithCPM.tasks;
         projectData.criticalPath = tasksWithCPM.criticalPath;
         projectData.totalDuration = tasksWithCPM.totalDuration;
@@ -69,10 +74,10 @@ router.post("/create", async (req, res) => {
     }
 });
 
-// ✅ GET route to fetch all projects
+// ✅ GET route to fetch all projects for authenticated user
 router.get("/all", async (req, res) => {
     try {
-        const projects = await Project.find().sort({ createdAt: -1 });
+        const projects = await Project.find({ userId: req.user.id }).sort({ createdAt: -1 });
         res.json(projects);
     } catch (error) {
         console.error("Error fetching projects:", error);
@@ -80,10 +85,10 @@ router.get("/all", async (req, res) => {
     }
 });
 
-// ✅ GET route to fetch single project by ID
+// ✅ GET route to fetch single project by ID for authenticated user
 router.get("/:id", async (req, res) => {
     try {
-        const project = await Project.findById(req.params.id);
+        const project = await Project.findOne({ _id: req.params.id, userId: req.user.id });
         if (!project) {
             return res.status(404).json({ message: "Project not found" });
         }
@@ -94,17 +99,18 @@ router.get("/:id", async (req, res) => {
     }
 });
 
-// ✅ PUT route to update project
+// ✅ PUT route to update project for authenticated user
 router.put("/:id", async (req, res) => {
     try {
         const projectData = req.body;
         projectData.updatedAt = Date.now();
+        delete projectData.userId; // Prevent hijacking user ID
 
         // Clean up dependency names
         if (projectData.tasks) {
             projectData.tasks = projectData.tasks.map(task => ({
                 ...task,
-                dependencies: task.dependencies.map(dep => 
+                dependencies: (task.dependencies || []).map(dep => 
                     dep.trim().replace(/\s+/g, ' ').replace(/=/g, '-')
                 )
             }));
@@ -118,8 +124,8 @@ router.put("/:id", async (req, res) => {
             projectData.totalDuration = tasksWithCPM.totalDuration;
         }
 
-        const updatedProject = await Project.findByIdAndUpdate(
-            req.params.id,
+        const updatedProject = await Project.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user.id },
             projectData,
             { new: true }
         );
@@ -138,10 +144,10 @@ router.put("/:id", async (req, res) => {
     }
 });
 
-// ✅ DELETE route to remove project
+// ✅ DELETE route to remove project for authenticated user
 router.delete("/:id", async (req, res) => {
     try {
-        const deletedProject = await Project.findByIdAndDelete(req.params.id);
+        const deletedProject = await Project.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
         if (!deletedProject) {
             return res.status(404).json({ message: "Project not found" });
         }
@@ -154,6 +160,10 @@ router.delete("/:id", async (req, res) => {
 
 // ✅ Enhanced CPM Calculation Function
 function calculateCPM(tasks) {
+    if (!tasks || tasks.length === 0) {
+        return { tasks: [], criticalPath: [], totalDuration: 0 };
+    }
+    
     // Create task map with cleaned names
     const taskMap = {};
     const nameToId = {};
@@ -168,7 +178,7 @@ function calculateCPM(tasks) {
             id: taskId,
             name: cleanedName,
             // Clean dependencies
-            dependencies: task.dependencies.map(dep => 
+            dependencies: (task.dependencies || []).map(dep => 
                 dep.trim().replace(/\s+/g, ' ').replace(/=/g, '-')
             )
         };
@@ -222,7 +232,8 @@ function calculateCPM(tasks) {
     const LS = {};
     const LF = {};
     const reverseVisited = new Set();
-    const totalDuration = Math.max(...Object.values(EF));
+    const efValues = Object.values(EF);
+    const totalDuration = efValues.length > 0 ? Math.max(...efValues) : 0;
 
     function backwardPass(nodeId) {
         if (reverseVisited.has(nodeId)) return LS[nodeId];
@@ -276,7 +287,7 @@ router.post("/calculate-cpm", async (req, res) => {
         const cleanedTasks = tasks.map(task => ({
             ...task,
             name: task.name.trim().replace(/\s+/g, ' ').replace(/=/g, '-'),
-            dependencies: task.dependencies.map(dep => 
+            dependencies: (task.dependencies || []).map(dep => 
                 dep.trim().replace(/\s+/g, ' ').replace(/=/g, '-')
             )
         }));

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   BanknoteIcon,
   BarChart3,
@@ -29,8 +29,11 @@ import {
   Landmark,
   PieChart,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Lock,
+  Check
 } from "lucide-react";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +54,12 @@ type UserProfile = {
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
   trialEndDate?: string;
+  sellerName?: string;
+  sellerPhone?: string;
+  sellerEmail?: string;
+  sellerGSTIN?: string;
+  sellerState?: string;
+  sellerAddress?: string;
 };
 
 type DashboardModule = {
@@ -122,17 +131,119 @@ const isDateInPeriod = (dateInput: any, period: string): boolean => {
 
 const toNumber = (value: unknown) => Number(value) || 0;
 const formatCurrency = (value: unknown) => `₹${toNumber(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const INDIAN_STATES = [
+  "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
+  "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa",
+  "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka",
+  "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur",
+  "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan",
+  "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
+];
+
+const getModuleKeyFromPath = (path: string): string => {
+  if (path === "/") return "dashboard";
+  if (path === "/tax-gst") return "tax-gst";
+  if (path === "/balance-sheet") return "balance-sheet";
+  if (path === "/profit-loss") return "profit-loss";
+  if (path === "/cashflow") return "cashflow";
+  if (path === "/cashflow-statement") return "cashflow-statement";
+  if (path === "/financial-ratios") return "financial-ratios";
+  if (path === "/civil-engineering") return "civil-engineering";
+  return path.replace("/", "");
+};
 
 // --- Main Component ---
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
+
+  const { 
+    user: contextUser, 
+    loading: contextLoading, 
+    hasAccess, 
+    openUpgradeModal, 
+    showUpgradeModalFor, 
+    closeUpgradeModal, 
+    refreshUser 
+  } = useSubscription();
   
   // State
   const [loading, setLoading] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
+
+  // Sync user state from subscription context
+  useEffect(() => {
+    if (contextUser) {
+      setUser(contextUser);
+    }
+  }, [contextUser]);
+
+  // Sync loading state
+  useEffect(() => {
+    setLoading(contextLoading);
+  }, [contextLoading]);
+
+  // Listen to redirect triggers for opening upgrade modal
+  useEffect(() => {
+    if (location.state?.triggerUpgradeModal) {
+      openUpgradeModal(location.state.triggerUpgradeModal);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
+  const DashboardWidgetLock = ({ moduleName, children, className = "" }: { moduleName: string, children: React.ReactNode, className?: string }) => {
+    const isLocked = !hasAccess(moduleName);
+
+    if (!isLocked) {
+      return <div className={`relative ${className}`}>{children}</div>;
+    }
+
+    const moduleTitle = dashboardModules.find(m => getModuleKeyFromPath(m.path) === moduleName)?.title || moduleName;
+
+    return (
+      <div className={`relative overflow-hidden group ${className}`}>
+        {/* Blurred background content */}
+        <div className="filter blur-[1.5px] pointer-events-none select-none opacity-40">
+          {children}
+        </div>
+        
+        {/* Lock Overlay */}
+        <div className="absolute inset-0 bg-slate-50/50 backdrop-blur-[1.5px] flex flex-col items-center justify-center p-6 text-center z-10 animate-fade-in border border-dashed border-slate-300 rounded-[4px]">
+          <div className="w-9 h-9 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center mb-2">
+            <Lock className="w-4 h-4 text-slate-500 animate-pulse" />
+          </div>
+          <h4 className="text-[13px] font-bold text-slate-800 mb-0.5">
+            {moduleTitle} Locked
+          </h4>
+          <p className="text-[11px] text-slate-400 max-w-[200px] mb-2.5 leading-snug">
+            Not included in your current subscription.
+          </p>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              openUpgradeModal(moduleName);
+            }}
+            className="px-3 py-1.5 bg-[#006aff] hover:bg-[#005cdb] text-white text-[11px] font-bold rounded shadow-sm transition-colors flex items-center gap-1 cursor-pointer select-none"
+          >
+            <Sparkles className="w-3 h-3" /> Upgrade Plan
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Seller Setup Modal States
+  const [showSellerSetupModal, setShowSellerSetupModal] = useState(false);
+  const [setupSellerName, setSetupSellerName] = useState("");
+  const [setupSellerPhone, setSetupSellerPhone] = useState("");
+  const [setupSellerEmail, setSetupSellerEmail] = useState("");
+  const [setupSellerGSTIN, setSetupSellerGSTIN] = useState("");
+  const [setupSellerState, setSetupSellerState] = useState("Tamil Nadu");
+  const [setupSellerAddress, setSetupSellerAddress] = useState("");
+  const [isSubmittingSetup, setIsSubmittingSetup] = useState(false);
   
   // Period filtering & Raw Datasets States
   const [selectedPeriod, setSelectedPeriod] = useState<string>("this-month");
@@ -216,13 +327,18 @@ const Dashboard = () => {
         if (data.subscriptionStatus !== "active" || isTrialExpired(data)) {
           toast({
             variant: "destructive",
-            title: "Free trial ended",
-            description: "Your trial is over. Please choose a paid plan to continue.",
+            title: "Free Trial / Subscription Ended",
+            description: "Your subscription has expired. Premium features are locked. Please upgrade or renew your plan.",
           });
-          localStorage.removeItem("token");
-          navigate("/auth?tab=signup&plan=monthly");
+          fetchChatHistory();
         } else {
           fetchChatHistory();
+          // Check if seller name is not set, prompt the user to complete seller profile
+          if (!data.sellerName) {
+            setSetupSellerName(data.name || "");
+            setSetupSellerEmail(data.email || "");
+            setShowSellerSetupModal(true);
+          }
         }
       })
       .catch((error) => {
@@ -678,6 +794,333 @@ const Dashboard = () => {
     }
   };
 
+  const handleSaveSellerSetup = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!setupSellerName.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Required fields missing",
+        description: "Seller Name is required.",
+      });
+      return;
+    }
+
+    setIsSubmittingSetup(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(API_ENDPOINTS.UPDATE_PROFILE, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: user?.name || setupSellerName.trim(),
+          email: user?.email,
+          sellerName: setupSellerName.trim(),
+          sellerPhone: setupSellerPhone.trim(),
+          sellerEmail: setupSellerEmail.trim(),
+          sellerGSTIN: setupSellerGSTIN.trim(),
+          sellerState: setupSellerState,
+          sellerAddress: setupSellerAddress.trim(),
+        }),
+      });
+
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.message || "Failed to save seller details.");
+      }
+
+      if (payload.user) {
+        setUser(payload.user);
+      }
+      setShowSellerSetupModal(false);
+      toast({
+        title: "Setup Complete",
+        description: "Seller details have been successfully saved to your profile.",
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Setup Failed",
+        description: err.message || "Could not save seller details.",
+      });
+    } finally {
+      setIsSubmittingSetup(false);
+    }
+  };
+
+  // Upgrade Modal Component
+  const UpgradeModal = () => {
+    const { showUpgradeModalFor, closeUpgradeModal, refreshUser, user: contextUser } = useSubscription();
+    const [upgradingPlan, setUpgradingPlan] = useState<string | null>(null);
+
+    if (!showUpgradeModalFor) return null;
+
+    const moduleTitles: Record<string, string> = {
+      payroll: "Payroll Automation",
+      "tax-gst": "Tax & GST Management",
+      "balance-sheet": "Balance Sheet",
+      "profit-loss": "Profit & Loss",
+      cashflow: "Cash Flow Prediction",
+      "cashflow-statement": "Cash Flow Statement",
+      "financial-ratios": "Financial Ratios",
+      bookkeeping: "Bookkeeping",
+      inventory: "Inventory Management",
+      "bank-reconciliation": "Bank Reconciliation",
+      "fraud-detection": "Fraud Detection",
+      "civil-engineering": "Civil Engineering Project Planning",
+      invoice: "Invoice Automation"
+    };
+
+    const targetModuleTitle = moduleTitles[showUpgradeModalFor] || showUpgradeModalFor;
+
+    const handleUpgrade = async (planKey: string) => {
+      setUpgradingPlan(planKey);
+      try {
+        const token = localStorage.getItem("token");
+        const orderRes = await fetch(`${API_BASE_URL}/create-order`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            email: contextUser?.email,
+            plan: planKey
+          })
+        });
+
+        if (!orderRes.ok) {
+          throw new Error("Failed to create upgrade payment order.");
+        }
+
+        const orderData = await orderRes.json();
+
+        // DEV MODE check
+        if (orderData.devMode) {
+          toast({
+            title: "Simulating Upgrade Payment...",
+            description: "Processing checkout..."
+          });
+
+          const upgradeRes = await fetch(`${API_BASE_URL}/upgrade-subscription`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              razorpay_order_id: orderData.orderId,
+              razorpay_payment_id: "dev_payment_" + Date.now(),
+              razorpay_signature: "dev_signature",
+              plan: planKey
+            })
+          });
+
+          if (upgradeRes.ok) {
+            const resData = await upgradeRes.json();
+            setUser(resData.user);
+            await refreshUser();
+            toast({
+              title: "Upgrade Completed!",
+              description: `Successfully upgraded to ${orderData.planDetails.name}. All modules are now unlocked!`,
+            });
+            closeUpgradeModal();
+          } else {
+            const errData = await upgradeRes.json();
+            throw new Error(errData.message || "Failed to verify simulated payment.");
+          }
+          return;
+        }
+
+        const options = {
+          key: orderData.key,
+          amount: orderData.amount,
+          currency: orderData.currency,
+          name: "SHREE ANDAL AI",
+          description: `Upgrade to ${orderData.planDetails.name}`,
+          order_id: orderData.orderId,
+          handler: async function (response: any) {
+            try {
+              const upgradeRes = await fetch(`${API_BASE_URL}/upgrade-subscription`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  razorpay_order_id: response.razorpay_order_id || orderData.orderId,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                  plan: planKey
+                })
+              });
+
+              if (upgradeRes.ok) {
+                const resData = await upgradeRes.json();
+                setUser(resData.user);
+                await refreshUser();
+                toast({
+                  title: "Upgrade Completed!",
+                  description: `Successfully upgraded to ${orderData.planDetails.name}.`,
+                });
+                closeUpgradeModal();
+              } else {
+                toast({
+                  variant: "destructive",
+                  title: "Upgrade Verification Failed",
+                  description: "Payment verification failed. Please contact support."
+                });
+              }
+            } catch (err: any) {
+              console.error(err);
+            }
+          },
+          prefill: {
+            name: contextUser?.name || "",
+            email: contextUser?.email || ""
+          },
+          theme: {
+            color: "#006aff"
+          }
+        };
+
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+
+      } catch (err: any) {
+        toast({
+          variant: "destructive",
+          title: "Upgrade Failed",
+          description: err.message || "Could not process subscription upgrade."
+        });
+      } finally {
+        setUpgradingPlan(null);
+      }
+    };
+
+    const currentPlan = contextUser?.subscriptionPlan || "trial";
+
+    const plans = [
+      {
+        key: "monthly",
+        name: "Express Plan",
+        price: "₹1,500",
+        period: "month",
+        features: ["Invoice Automation", "Inventory Management", "Dashboard Access"],
+        unlocks: ["invoice", "inventory"],
+        color: "border-slate-200"
+      },
+      {
+        key: "annual",
+        name: "Professional Plan",
+        price: "₹16,200",
+        period: "year",
+        features: ["Bookkeeping", "Tax & GST Analysis", "Balance Sheets", "Profit & Loss Reports", "Financial Ratios", "Cash Flow prediction"],
+        unlocks: ["bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "invoice", "inventory"],
+        color: "border-[#006aff] shadow-[0_4px_20px_rgba(0,106,255,0.15)] bg-slate-50/50"
+      },
+      {
+        key: "lifetime",
+        name: "Enterprise Plan",
+        price: "₹45,000",
+        period: "one-time",
+        features: ["Payroll slip creation", "Bank Reconciliation", "Fraud Detection rules & scans", "Civil Engineering planning", "Full access to all current and future AI features"],
+        unlocks: ["payroll", "bank-reconciliation", "fraud-detection", "civil-engineering", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "invoice", "inventory"],
+        color: "border-purple-300"
+      }
+    ];
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4 overflow-y-auto">
+        <div className="bg-white w-full max-w-4xl rounded-[28px] border border-slate-200 shadow-2xl p-6 md:p-8 relative animate-in fade-in zoom-in-95 duration-200">
+          <button 
+            onClick={closeUpgradeModal}
+            className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          <div className="text-center mb-8 max-w-lg mx-auto">
+            <span className="inline-flex items-center gap-1 bg-[#e8f2ff] text-[#006aff] text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-[#cce3ff] mb-2.5">
+              <Lock className="w-3 h-3" /> Premium Feature
+            </span>
+            <h3 className="text-2xl font-bold text-slate-900 leading-tight">Unlock {targetModuleTitle}</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              This module is not included in your current <strong>{currentPlan === "trial" ? "Sandbox" : selectedPlanLabel}</strong> plan. Upgrade your plan to access this feature instantly.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {plans.map((p) => {
+              const isCurrent = currentPlan === p.key;
+              const unlocksThisFeature = p.unlocks.includes(showUpgradeModalFor);
+              const isDisabled = isCurrent || (currentPlan === "annual" && p.key === "monthly") || (currentPlan === "lifetime" && (p.key === "monthly" || p.key === "annual"));
+
+              return (
+                <div key={p.key} className={`border rounded-[20px] p-5 flex flex-col justify-between relative ${p.color}`}>
+                  {p.key === "annual" && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#006aff] text-white text-[9px] font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow">
+                      Most Popular
+                    </span>
+                  )}
+                  <div>
+                    <h4 className="font-bold text-[15px] text-slate-800">{p.name}</h4>
+                    <div className="mt-3 mb-4 flex items-baseline">
+                      <span className="text-[26px] font-extrabold text-slate-900">{p.price}</span>
+                      <span className="text-[12px] text-slate-500 ml-1">/{p.period}</span>
+                    </div>
+                    <div className="h-px bg-slate-100 w-full mb-4"></div>
+                    
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Key features added:</p>
+                    <ul className="space-y-2 mb-6">
+                      {p.features.map((feat, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-[12px] text-slate-600">
+                          <Check className="w-3.5 h-3.5 text-[#00b365] shrink-0 mt-0.5" />
+                          <span>{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="h-px bg-slate-100 w-full mb-4"></div>
+                    <button
+                      disabled={isDisabled || upgradingPlan !== null}
+                      onClick={() => handleUpgrade(p.key)}
+                      className={`w-full py-2.5 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        isCurrent
+                          ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                          : unlocksThisFeature
+                            ? "bg-[#006aff] hover:bg-[#005cdb] text-white shadow-sm"
+                            : "bg-slate-50 text-slate-400 hover:bg-slate-100 border border-slate-200"
+                      }`}
+                    >
+                      {isCurrent ? (
+                        "Your Current Plan"
+                      ) : upgradingPlan === p.key ? (
+                        "Processing..."
+                      ) : unlocksThisFeature ? (
+                        <>Upgrade to {p.name.split(" ")[0]}</>
+                      ) : (
+                        "Lacks this feature"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-center text-[10px] text-slate-400">
+            * All pricing plans are subject to 18% GST (already calculated at order checkout). Payment processed securely.
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[#f4f5f8] font-sans text-[#333] overflow-hidden selection:bg-[#006aff]/20 selection:text-[#006aff]">
       
@@ -699,9 +1142,37 @@ const Dashboard = () => {
 
           {/* Horizontal Navigation */}
           <nav className="hidden lg:flex items-center gap-6 h-full">
-            <button onClick={() => navigate("/inventory")} className="text-[14px] font-medium text-[#333] hover:text-[#006aff] transition-colors h-full flex items-center">Inventory</button>
-            <button onClick={() => navigate("/invoice")} className="text-[14px] font-medium text-[#333] hover:text-[#006aff] transition-colors h-full flex items-center">Invoice</button>
-            <button onClick={() => navigate("/bookkeeping")} className="text-[14px] font-medium text-[#333] hover:text-[#006aff] transition-colors h-full flex items-center">Bookkeeping</button>
+            {(() => {
+              const items = [
+                { name: "Inventory", path: "/inventory", module: "inventory" },
+                { name: "Invoice", path: "/invoice", module: "invoice" },
+                { name: "Bookkeeping", path: "/bookkeeping", module: "bookkeeping" }
+              ];
+              return items.map(item => {
+                const isLocked = !hasAccess(item.module);
+                if (isLocked) {
+                  return (
+                    <button 
+                      key={item.path}
+                      onClick={() => openUpgradeModal(item.module)}
+                      className="text-[13px] font-semibold text-[#888] bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-md border border-dashed border-slate-300 hover:text-slate-900 transition-all h-[36px] flex items-center gap-1.5 cursor-pointer opacity-75 hover:opacity-100 self-center select-none"
+                    >
+                      <span>{item.name}</span>
+                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    </button>
+                  );
+                }
+                return (
+                  <button 
+                    key={item.path}
+                    onClick={() => navigate(item.path)} 
+                    className="text-[14px] font-medium text-[#333] hover:text-[#006aff] transition-colors h-full flex items-center"
+                  >
+                    {item.name}
+                  </button>
+                );
+              });
+            })()}
 
             {/* Dropdown for All Products */}
             <div className="relative group flex items-center h-full">
@@ -716,14 +1187,27 @@ const Dashboard = () => {
                     .filter(m => !["/inventory", "/invoice", "/bookkeeping", "/"].includes(m.path))
                     .map(module => {
                       const Icon = module.icon;
+                      const moduleKey = getModuleKeyFromPath(module.path);
+                      const isLocked = !hasAccess(moduleKey);
                       return (
                         <button
                           key={module.path}
-                          onClick={() => navigate(module.path)}
-                          className="w-full text-left px-4 py-2.5 text-[13px] text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff] flex items-center gap-3 transition-colors"
+                          onClick={() => isLocked ? openUpgradeModal(moduleKey) : navigate(module.path)}
+                          className={`w-full text-left px-4 py-2.5 text-[13px] flex items-center justify-between transition-colors border-b border-slate-50 last:border-0 ${
+                            isLocked 
+                              ? "bg-slate-50/50 text-[#888] cursor-pointer" 
+                              : "text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff]"
+                          }`}
                         >
-                          <Icon className="w-4 h-4 shrink-0 text-[#777]" />
-                          <span className="truncate">{module.title}</span>
+                          <div className="flex items-center gap-3 truncate">
+                            <Icon className={`w-4 h-4 shrink-0 ${isLocked ? 'text-slate-400' : 'text-[#777]'}`} />
+                            <span className="truncate font-medium">{module.title}</span>
+                          </div>
+                          {isLocked && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-bold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider scale-90">
+                              <Lock className="w-2.5 h-2.5" /> Lock
+                            </span>
+                          )}
                         </button>
                       )
                   })}
@@ -808,17 +1292,34 @@ const Dashboard = () => {
           <nav className="space-y-0.5 px-3">
             {filteredModules.map((module) => {
               const Icon = module.icon;
+              const moduleKey = getModuleKeyFromPath(module.path);
+              const isLocked = !hasAccess(moduleKey);
               return (
                 <button
                   key={module.path}
                   onClick={() => {
-                    navigate(module.path);
-                    setMobileSidebarOpen(false);
+                    if (isLocked) {
+                      openUpgradeModal(moduleKey);
+                    } else {
+                      navigate(module.path);
+                      setMobileSidebarOpen(false);
+                    }
                   }}
-                  className="w-full text-left px-3 py-2 text-[14px] text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff] flex items-center gap-3 transition-colors rounded"
+                  className={`w-full text-left px-3 py-2 text-[14px] flex items-center justify-between transition-colors rounded my-1 ${
+                    isLocked 
+                      ? "border border-dashed border-slate-200 bg-slate-50 text-slate-400 cursor-pointer" 
+                      : "text-[#444] hover:bg-[#f4f5f8] hover:text-[#006aff]"
+                  }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0 text-[#777]" />
-                  <span className="truncate font-medium">{module.title}</span>
+                  <div className="flex items-center gap-3 truncate">
+                    <Icon className={`w-4 h-4 shrink-0 ${isLocked ? 'text-slate-350' : 'text-[#777]'}`} />
+                    <span className="truncate font-medium">{module.title}</span>
+                  </div>
+                  {isLocked && (
+                    <span className="flex items-center gap-0.5 text-[9px] font-bold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                      <Lock className="w-2.5 h-2.5" /> Lock
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -854,358 +1355,402 @@ const Dashboard = () => {
 
           {/* --- Stats Grid (4 columns to fit fully visible text) --- */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-            {dashboardStats.map((stat, i) => (
-              <div key={i} className="bg-white p-5 rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col justify-between group">
-                <div className="flex items-center gap-3 mb-4">
-                  <stat.icon className={`w-[20px] h-[20px] ${stat.iconColor}`} />
-                  <h3 className="text-[13px] font-semibold text-[#555] uppercase tracking-wide">
-                    {stat.title}
-                  </h3>
+            {dashboardStats.map((stat, i) => {
+              const statModules = ["invoice", "invoice", "profit-loss", "tax-gst"];
+              const moduleKey = statModules[i];
+              const isLocked = !hasAccess(moduleKey);
+
+              if (isLocked) {
+                return (
+                  <div key={i} className="bg-white p-5 rounded-[4px] border border-dashed border-slate-300 shadow-sm flex flex-col justify-between relative overflow-hidden h-[120px] select-none">
+                    <div className="flex items-center gap-3 mb-4 opacity-40">
+                      <stat.icon className={`w-[20px] h-[20px] ${stat.iconColor}`} />
+                      <h3 className="text-[13px] font-semibold text-[#555] uppercase tracking-wide">
+                        {stat.title}
+                      </h3>
+                    </div>
+                    <div className="absolute inset-0 bg-slate-50/50 backdrop-blur-[0.5px] flex flex-col items-center justify-center p-3 text-center z-10 border border-dashed border-slate-200 rounded-[4px]">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openUpgradeModal(moduleKey);
+                        }}
+                        className="flex items-center gap-1.5 cursor-pointer text-[#006aff] hover:text-[#005cdb] transition-colors font-bold uppercase tracking-wider text-[11px] bg-white border border-slate-200 px-3 py-1.5 rounded-full shadow-sm"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
+                        <span>Unlock {stat.title.split(" ")[1] || stat.title}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={i} className="bg-white p-5 rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col justify-between group">
+                  <div className="flex items-center gap-3 mb-4">
+                    <stat.icon className={`w-[20px] h-[20px] ${stat.iconColor}`} />
+                    <h3 className="text-[13px] font-semibold text-[#555] uppercase tracking-wide">
+                      {stat.title}
+                    </h3>
+                  </div>
+                  <h2 className="text-[24px] font-bold text-[#111] tabular-nums">
+                    {stat.amount || "₹0.00"}
+                  </h2>
                 </div>
-                <h2 className="text-[24px] font-bold text-[#111] tabular-nums">
-                  {stat.amount || "₹0.00"}
-                </h2>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* --- Row 1: Cash Flow Prediction & Profit & Loss --- */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             
             {/* Cash Flow Prediction (Spans 2 columns) */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm lg:col-span-2 flex flex-col min-w-0 relative overflow-hidden">
-              <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
-                <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
-                  <Activity className="w-[18px] h-[18px] text-[#006aff]" /> 
-                  Cash Flow Prediction
-                </h3>
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] bg-[#e8f2ff] text-[#006aff] font-bold px-3 py-1.5 rounded-full uppercase tracking-widest border border-[#cce3ff] flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" /> AI Forecast Active
-                  </span>
-                  <button onClick={() => handleDownload("Cash Flow Prediction")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
-                    <Download className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 flex-1 w-full flex flex-col justify-center">
-                {!cashFlowBars ? (
-                  <div className="flex-1 flex items-center justify-center text-[#999] text-[14px] font-medium py-16">
-                    No cash flow data available to predict
+            <DashboardWidgetLock moduleName="cashflow" className="lg:col-span-2 flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col relative overflow-hidden h-full">
+                <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
+                  <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
+                    <Activity className="w-[18px] h-[18px] text-[#006aff]" /> 
+                    Cash Flow Prediction
+                  </h3>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] bg-[#e8f2ff] text-[#006aff] font-bold px-3 py-1.5 rounded-full uppercase tracking-widest border border-[#cce3ff] flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" /> AI Forecast Active
+                    </span>
+                    <button onClick={() => handleDownload("Cash Flow Prediction")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                      <Download className="w-4 h-4" />
+                    </button>
                   </div>
-                ) : (
-                  <>
-                    <div className="relative flex-1 flex min-h-[200px]">
-                      <div className="flex flex-col justify-between text-[12px] text-[#777] font-medium py-1 w-12 shrink-0">
-                        <span>{formatYAxis(cashFlowMax)}</span>
-                        <span>{formatYAxis(cashFlowMax * 0.75)}</span>
-                        <span>{formatYAxis(cashFlowMax * 0.5)}</span>
-                        <span>{formatYAxis(cashFlowMax * 0.25)}</span>
-                        <span>0</span>
-                      </div>
-                      <div className="flex-1 relative border-b border-[#eee]">
-                        <div className="absolute inset-0 flex flex-col justify-between py-1">
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-transparent"></div>
+                </div>
+                <div className="p-6 flex-1 w-full flex flex-col justify-center">
+                  {!cashFlowBars ? (
+                    <div className="flex-1 flex items-center justify-center text-[#999] text-[14px] font-medium py-16">
+                      No cash flow data available to predict
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative flex-1 flex min-h-[200px]">
+                        <div className="flex flex-col justify-between text-[12px] text-[#777] font-medium py-1 w-12 shrink-0">
+                          <span>{formatYAxis(cashFlowMax)}</span>
+                          <span>{formatYAxis(cashFlowMax * 0.75)}</span>
+                          <span>{formatYAxis(cashFlowMax * 0.5)}</span>
+                          <span>{formatYAxis(cashFlowMax * 0.25)}</span>
+                          <span>0</span>
                         </div>
-                        <div className="absolute inset-0 flex items-end justify-between px-4 pt-1">
-                          {cashFlowBars.map((bar, i) => (
-                            <div key={i} className="flex gap-1.5 w-[8%] h-full items-end pb-[1px] relative z-10">
-                              <div className="bg-[#00b365] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.inflowHeight }} title={`Inflow: ₹${bar.inflowVal}`}></div>
-                              <div className="bg-[#f0483e] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.outflowHeight }} title={`Outflow: ₹${bar.outflowVal}`}></div>
+                        <div className="flex-1 relative border-b border-[#eee]">
+                          <div className="absolute inset-0 flex flex-col justify-between py-1">
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-transparent"></div>
+                          </div>
+                          <div className="absolute inset-0 flex items-end justify-between px-4 pt-1">
+                            {cashFlowBars.map((bar, i) => (
+                              <div key={i} className="flex gap-1.5 w-[8%] h-full items-end pb-[1px] relative z-10">
+                                <div className="bg-[#00b365] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.inflowHeight }} title={`Inflow: ₹${bar.inflowVal}`}></div>
+                                <div className="bg-[#f0483e] w-full rounded-t-sm transition-opacity hover:opacity-80" style={{ height: bar.outflowHeight }} title={`Outflow: ₹${bar.outflowVal}`}></div>
+                              </div>
+                            ))}
+                            {/* AI Prediction Dummy Bar */}
+                            <div className="flex gap-1.5 w-[8%] h-full items-end pb-[1px] relative z-10 opacity-60">
+                                <div className="bg-[#00b365] w-full rounded-t-sm border border-dashed border-[#00b365] bg-opacity-40" style={{ height: "70%" }} title="Predicted Inflow"></div>
+                                <div className="bg-[#f0483e] w-full rounded-t-sm border border-dashed border-[#f0483e] bg-opacity-40" style={{ height: "40%" }} title="Predicted Outflow"></div>
                             </div>
-                          ))}
-                          {/* AI Prediction Dummy Bar */}
-                          <div className="flex gap-1.5 w-[8%] h-full items-end pb-[1px] relative z-10 opacity-60">
-                              <div className="bg-[#00b365] w-full rounded-t-sm border border-dashed border-[#00b365] bg-opacity-40" style={{ height: "70%" }} title="Predicted Inflow"></div>
-                              <div className="bg-[#f0483e] w-full rounded-t-sm border border-dashed border-[#f0483e] bg-opacity-40" style={{ height: "40%" }} title="Predicted Outflow"></div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-[#777] font-semibold uppercase tracking-wider pl-12 pt-4 mb-5">
-                      {cashFlowXLabels.map((lbl, idx) => (
-                        <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
-                      ))}
-                      <span className="text-[#006aff]">Next Mo (Est)</span>
-                    </div>
-                    <div className="flex justify-center gap-6 text-[12px] text-[#555] font-semibold">
-                      <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-[#00b365]"></span> Actual Inflow</div>
-                      <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-[#f0483e]"></span> Actual Outflow</div>
-                      <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm border border-dashed border-[#00b365] bg-transparent"></span> Predicted</div>
-                    </div>
-                  </>
-                )}
+                      <div className="flex justify-between text-[11px] text-[#777] font-semibold uppercase tracking-wider pl-12 pt-4 mb-5">
+                        {cashFlowXLabels.map((lbl, idx) => (
+                          <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
+                        ))}
+                        <span className="text-[#006aff]">Next Mo (Est)</span>
+                      </div>
+                      <div className="flex justify-center gap-6 text-[12px] text-[#555] font-semibold">
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-[#00b365]"></span> Actual Inflow</div>
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-[#f0483e]"></span> Actual Outflow</div>
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm border border-dashed border-[#00b365] bg-transparent"></span> Predicted</div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            </DashboardWidgetLock>
 
             {/* Profit & Loss Summary (Spans 1 column) */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col lg:col-span-1 min-w-0">
-              <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
-                <h3 className="text-[15px] font-bold text-[#222]">Profit and Loss</h3>
-                <button onClick={() => handleDownload("Profit and Loss")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
-                  <Download className="w-4 h-4" />
-                </button>
+            <DashboardWidgetLock moduleName="profit-loss" className="lg:col-span-1 flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col h-full">
+                <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                  <h3 className="text-[15px] font-bold text-[#222]">Profit and Loss</h3>
+                  <button onClick={() => handleDownload("Profit and Loss")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="p-6 flex-1 flex flex-col justify-center">
+                  <div className="flex justify-between items-center py-3 border-b border-[#f4f5f8]">
+                    <span className="text-[14px] text-[#555]">Total Income</span>
+                    <span className="text-[15px] font-semibold text-[#222] tabular-nums">
+                      {plSummaryData.totalRevenue > 0 ? `₹${plSummaryData.totalRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-3 border-b border-[#f4f5f8]">
+                    <span className="text-[14px] text-[#555]">Total Expenses</span>
+                    <span className="text-[15px] font-semibold text-[#222] tabular-nums">
+                      {plSummaryData.totalExpenses > 0 ? `₹${plSummaryData.totalExpenses.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-5 my-2">
+                    <span className="text-[16px] font-bold text-[#222]">Net Profit</span>
+                    <span className={`text-[22px] font-bold tabular-nums ${plSummaryData.netProfit >= 0 ? "text-[#00b365]" : "text-[#f0483e]"}`}>
+                      {plSummaryData.netProfit < 0 ? "-" : ""}₹{Math.abs(plSummaryData.netProfit).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-3 border-t border-[#f4f5f8]">
+                    <span className="text-[14px] text-[#555]">Gross Margin</span>
+                    <span className="text-[15px] font-semibold text-[#222] tabular-nums">
+                      {plSummaryData.totalRevenue > 0 ? `${plSummaryData.grossProfitMargin.toFixed(2)}%` : "0.00%"}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="p-6 flex-1 flex flex-col justify-center">
-                <div className="flex justify-between items-center py-3 border-b border-[#f4f5f8]">
-                  <span className="text-[14px] text-[#555]">Total Income</span>
-                  <span className="text-[15px] font-semibold text-[#222] tabular-nums">
-                    {plSummaryData.totalRevenue > 0 ? `₹${plSummaryData.totalRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-3 border-b border-[#f4f5f8]">
-                  <span className="text-[14px] text-[#555]">Total Expenses</span>
-                  <span className="text-[15px] font-semibold text-[#222] tabular-nums">
-                    {plSummaryData.totalExpenses > 0 ? `₹${plSummaryData.totalExpenses.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "₹0.00"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-5 my-2">
-                  <span className="text-[16px] font-bold text-[#222]">Net Profit</span>
-                  <span className={`text-[22px] font-bold tabular-nums ${plSummaryData.netProfit >= 0 ? "text-[#00b365]" : "text-[#f0483e]"}`}>
-                    {plSummaryData.netProfit < 0 ? "-" : ""}₹{Math.abs(plSummaryData.netProfit).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-3 border-t border-[#f4f5f8]">
-                  <span className="text-[14px] text-[#555]">Gross Margin</span>
-                  <span className="text-[15px] font-semibold text-[#222] tabular-nums">
-                    {plSummaryData.totalRevenue > 0 ? `${plSummaryData.grossProfitMargin.toFixed(2)}%` : "0.00%"}
-                  </span>
-                </div>
-              </div>
-            </div>
+            </DashboardWidgetLock>
           </div>
 
           {/* --- Row 2: Recent Invoices & Cash Flow Statement --- */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             
             {/* Recent Invoices Table (Spans 2 columns) */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col overflow-hidden lg:col-span-2 min-w-0">
-              <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
-                <h3 className="text-[15px] font-bold text-[#222]">Recent Invoices</h3>
-                <button onClick={() => handleDownload("Recent Invoices")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
-                  <Download className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                <table className="w-full text-left border-collapse min-w-[500px]">
-                  <thead>
-                    <tr className="border-b border-[#e4e5e7] bg-white">
-                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap w-36">Date</th>
-                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap">Invoice#</th>
-                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap">Customer Name</th>
-                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide text-right whitespace-nowrap">Status</th>
-                      <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide text-right whitespace-nowrap">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {invoicesList.length > 0 ? (
-                      invoicesList.map((inv, i) => (
-                        <tr key={i} className="border-b border-[#f4f5f8] last:border-0 hover:bg-[#f9fafd] transition-colors cursor-pointer">
-                          <td className="py-4 px-6 text-[14px] text-[#555] whitespace-nowrap">12 Aug 2026</td>
-                          <td className="py-4 px-6 text-[14px] text-[#006aff] font-medium whitespace-nowrap">{inv.id}</td>
-                          <td className="py-4 px-6 text-[14px] text-[#333] font-medium truncate max-w-[200px]">{inv.company}</td>
-                          <td className="py-4 px-6 text-right whitespace-nowrap">
-                            <span className={`px-2.5 py-1 rounded-[4px] text-[11px] font-bold uppercase tracking-wider ${inv.statusColor}`}>
-                              {inv.status}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6 text-[14px] font-bold text-[#222] text-right tabular-nums whitespace-nowrap">{inv.amount}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="py-10 text-center text-[#999] text-[14px]">
-                          No recent invoices found.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Cash Flow Statement (Spans 1 column) */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm lg:col-span-1 flex flex-col min-w-0">
-               <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
-                  <h3 className="text-[15px] font-bold text-[#222]">Cash Flow Statement</h3>
-                  <button onClick={() => handleDownload("Cash Flow Statement")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+            <DashboardWidgetLock moduleName="invoice" className="lg:col-span-2 flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col overflow-hidden h-full">
+                <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
+                  <h3 className="text-[15px] font-bold text-[#222]">Recent Invoices</h3>
+                  <button onClick={() => handleDownload("Recent Invoices")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
                     <Download className="w-4 h-4" />
                   </button>
-               </div>
-               <div className="p-6 flex-1 flex flex-col justify-center gap-5">
-                  <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
-                     <span className="text-[14px] text-[#555]">Operating Activities</span>
-                     <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.8)}</span>
-                  </div>
-                  <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
-                     <span className="text-[14px] text-[#555]">Investing Activities</span>
-                     <span className="text-[15px] font-semibold text-[#f0483e]">{formatCurrency(cfsOutflow * 0.3)}</span>
-                  </div>
-                  <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
-                     <span className="text-[14px] text-[#555]">Financing Activities</span>
-                     <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-3">
-                     <span className="text-[16px] font-bold text-[#222]">Net Cash Flow</span>
-                     <span className={`text-[18px] font-bold tabular-nums ${cfsNetFlow >= 0 ? "text-[#006aff]" : "text-[#f0483e]"}`}>
-                       {formatCurrency(cfsNetFlow)}
-                     </span>
-                  </div>
-               </div>
-            </div>
+                </div>
+                <div className="flex-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+                  <table className="w-full text-left border-collapse min-w-[500px]">
+                    <thead>
+                      <tr className="border-b border-[#e4e5e7] bg-white">
+                        <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap w-36">Date</th>
+                        <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap">Invoice#</th>
+                        <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide whitespace-nowrap">Customer Name</th>
+                        <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide text-right whitespace-nowrap">Status</th>
+                        <th className="py-3 px-6 font-semibold text-[#777] text-[12px] uppercase tracking-wide text-right whitespace-nowrap">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoicesList.length > 0 ? (
+                        invoicesList.map((inv, i) => (
+                          <tr key={i} className="border-b border-[#f4f5f8] last:border-0 hover:bg-[#f9fafd] transition-colors cursor-pointer">
+                            <td className="py-4 px-6 text-[14px] text-[#555] whitespace-nowrap">12 Aug 2026</td>
+                            <td className="py-4 px-6 text-[14px] text-[#006aff] font-medium whitespace-nowrap">{inv.id}</td>
+                            <td className="py-4 px-6 text-[14px] text-[#333] font-medium truncate max-w-[200px]">{inv.company}</td>
+                            <td className="py-4 px-6 text-right whitespace-nowrap">
+                              <span className={`px-2.5 py-1 rounded-[4px] text-[11px] font-bold uppercase tracking-wider ${inv.statusColor}`}>
+                                {inv.status}
+                              </span>
+                            </td>
+                            <td className="py-4 px-6 text-[14px] font-bold text-[#222] text-right tabular-nums whitespace-nowrap">{inv.amount}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="py-10 text-center text-[#999] text-[14px]">
+                            No recent invoices found.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </DashboardWidgetLock>
 
+            {/* Cash Flow Statement (Spans 1 column) */}
+            <DashboardWidgetLock moduleName="cashflow-statement" className="lg:col-span-1 flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col h-full">
+                 <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                    <h3 className="text-[15px] font-bold text-[#222]">Cash Flow Statement</h3>
+                    <button onClick={() => handleDownload("Cash Flow Statement")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                      <Download className="w-4 h-4" />
+                    </button>
+                 </div>
+                 <div className="p-6 flex-1 flex flex-col justify-center gap-5">
+                    <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
+                       <span className="text-[14px] text-[#555]">Operating Activities</span>
+                       <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.8)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
+                       <span className="text-[14px] text-[#555]">Investing Activities</span>
+                       <span className="text-[15px] font-semibold text-[#f0483e]">{formatCurrency(cfsOutflow * 0.3)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
+                       <span className="text-[14px] text-[#555]">Financing Activities</span>
+                       <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-3">
+                       <span className="text-[16px] font-bold text-[#222]">Net Cash Flow</span>
+                       <span className={`text-[18px] font-bold tabular-nums ${cfsNetFlow >= 0 ? "text-[#006aff]" : "text-[#f0483e]"}`}>
+                         {formatCurrency(cfsNetFlow)}
+                       </span>
+                    </div>
+                 </div>
+              </div>
+            </DashboardWidgetLock>
           </div>
 
           {/* --- Row 3: Financial Ratios & Income / Expense --- */}
           <div className="flex flex-col gap-6 mb-8">
             
             {/* Financial Ratios block */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
-              <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
-                <h3 className="text-[15px] font-bold text-[#222]">Financial Ratios</h3>
-                <button onClick={() => handleDownload("Financial Ratios")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
-                  <Download className="w-4 h-4" />
-                </button>
+            <DashboardWidgetLock moduleName="financial-ratios" className="flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col">
+                <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                  <h3 className="text-[15px] font-bold text-[#222]">Financial Ratios</h3>
+                  <button onClick={() => handleDownload("Financial Ratios")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-[#e4e5e7]">
+                  {financialRatios.length > 0 ? (
+                    financialRatios.map((ratio, idx) => (
+                        <div key={idx} className="p-5 flex flex-col items-center justify-center text-center hover:bg-[#f9fafd] transition-colors cursor-default">
+                          <span className="text-[13px] font-semibold text-[#555] mb-2">{ratio.label}</span>
+                          <span className="text-[22px] font-bold text-[#111] tabular-nums mb-3">{ratio.value}</span>
+                          <span className={`text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-[4px] ${
+                            ratio.status === "Good" ? "bg-[#e6f8ef] text-[#00b365] border border-[#00b365]/30" : "bg-[#fde9e8] text-[#f0483e] border border-[#f0483e]/30"
+                          }`}>
+                            {ratio.status}
+                          </span>
+                        </div>
+                    ))
+                  ) : (
+                    <div className="col-span-full py-10 text-center text-[#999] text-[14px]">
+                      No financial ratios calculated yet.
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-[#e4e5e7]">
-                {financialRatios.length > 0 ? (
-                  financialRatios.map((ratio, idx) => (
-                      <div key={idx} className="p-5 flex flex-col items-center justify-center text-center hover:bg-[#f9fafd] transition-colors cursor-default">
-                        <span className="text-[13px] font-semibold text-[#555] mb-2">{ratio.label}</span>
-                        <span className="text-[22px] font-bold text-[#111] tabular-nums mb-3">{ratio.value}</span>
-                        <span className={`text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-[4px] ${
-                          ratio.status === "Good" ? "bg-[#e6f8ef] text-[#00b365] border border-[#00b365]/30" : "bg-[#fde9e8] text-[#f0483e] border border-[#f0483e]/30"
-                        }`}>
-                          {ratio.status}
-                        </span>
-                      </div>
-                  ))
-                ) : (
-                  <div className="col-span-full py-10 text-center text-[#999] text-[14px]">
-                    No financial ratios calculated yet.
-                  </div>
-                )}
-              </div>
-            </div>
+            </DashboardWidgetLock>
 
             {/* Income & Expense block (Full Width SVG line chart) */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
-              <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
-                <h3 className="text-[15px] font-bold text-[#222]">Income and Expense</h3>
-                <button onClick={() => handleDownload("Income and Expense")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
-                  <Download className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="p-6 flex-1 w-full flex flex-col justify-center">
-                {!revenueLinePath ? (
-                  <div className="flex-1 flex items-center justify-center text-[#999] text-[14px] font-medium py-16">
-                    No data available for this period
-                  </div>
-                ) : (
-                  <>
-                    <div className="relative flex-1 flex min-h-[220px]">
-                      <div className="flex flex-col justify-between text-[12px] text-[#777] font-medium py-1 w-12 shrink-0">
-                        <span>{formatYAxis(revenueMax)}</span>
-                        <span>{formatYAxis(revenueMax * 0.75)}</span>
-                        <span>{formatYAxis(revenueMax * 0.5)}</span>
-                        <span>{formatYAxis(revenueMax * 0.25)}</span>
-                        <span>0</span>
-                      </div>
-                      <div className="flex-1 relative border-b border-[#eee]">
-                        <div className="absolute inset-0 flex flex-col justify-between py-1">
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-[#f4f5f8]"></div>
-                          <div className="h-px w-full bg-transparent"></div>
+            <DashboardWidgetLock moduleName="bookkeeping" className="flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col">
+                <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
+                  <h3 className="text-[15px] font-bold text-[#222]">Income and Expense</h3>
+                  <button onClick={() => handleDownload("Income and Expense")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="p-6 flex-1 w-full flex flex-col justify-center">
+                  {!revenueLinePath ? (
+                    <div className="flex-1 flex items-center justify-center text-[#999] text-[14px] font-medium py-16">
+                      No data available for this period
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative flex-1 flex min-h-[220px]">
+                        <div className="flex flex-col justify-between text-[12px] text-[#777] font-medium py-1 w-12 shrink-0">
+                          <span>{formatYAxis(revenueMax)}</span>
+                          <span>{formatYAxis(revenueMax * 0.75)}</span>
+                          <span>{formatYAxis(revenueMax * 0.5)}</span>
+                          <span>{formatYAxis(revenueMax * 0.25)}</span>
+                          <span>0</span>
                         </div>
-                        <svg className="absolute inset-0 w-full h-full pb-1" preserveAspectRatio="none" viewBox="0 0 100 100">
-                          <path d={revenueLinePath} fill="none" stroke="#006aff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
+                        <div className="flex-1 relative border-b border-[#eee]">
+                          <div className="absolute inset-0 flex flex-col justify-between py-1">
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-[#f4f5f8]"></div>
+                            <div className="h-px w-full bg-transparent"></div>
+                          </div>
+                          <svg className="absolute inset-0 w-full h-full pb-1" preserveAspectRatio="none" viewBox="0 0 100 100">
+                            <path d={revenueLinePath} fill="none" stroke="#006aff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-[#777] font-semibold uppercase tracking-wider pl-12 pt-4">
-                      {revenueXLabels.map((lbl, idx) => (
-                        <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
-                      ))}
-                    </div>
-                  </>
-                )}
+                      <div className="flex justify-between text-[11px] text-[#777] font-semibold uppercase tracking-wider pl-12 pt-4">
+                        {revenueXLabels.map((lbl, idx) => (
+                          <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-
+            </DashboardWidgetLock>
           </div>
 
           {/* --- Row 4: Balance Sheet & Tax / GST Analysis --- */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             
             {/* Balance Sheet */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
-               <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
-                  <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
-                     <Landmark className="w-4 h-4 text-[#555]" /> Balance Sheet Overview
-                  </h3>
-                  <button onClick={() => handleDownload("Balance Sheet Overview")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
-                    <Download className="w-4 h-4" />
-                  </button>
-               </div>
-               <div className="p-6 flex-1 flex flex-col gap-4">
-                  <div className="flex justify-between items-center p-4 bg-[#f9fafd] rounded border border-[#e4e5e7]">
-                     <span className="text-[14px] font-semibold text-[#555]">Total Assets</span>
-                     <span className="text-[16px] font-bold text-[#222] tabular-nums">{formatCurrency(bsSummary.assets)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-4 bg-[#f9fafd] rounded border border-[#e4e5e7]">
-                     <span className="text-[14px] font-semibold text-[#555]">Total Liabilities</span>
-                     <span className="text-[16px] font-bold text-[#222] tabular-nums">{formatCurrency(bsSummary.liabilities)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-5 mt-3 bg-[#e8f2ff] rounded border border-[#cce3ff]">
-                     <span className="text-[16px] font-bold text-[#006aff]">Total Equity</span>
-                     <span className="text-[20px] font-bold text-[#006aff] tabular-nums">{formatCurrency(bsSummary.equity)}</span>
-                  </div>
-               </div>
-            </div>
-
-            {/* Tax & GST Analysis */}
-            <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col min-w-0">
-               <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
-                  <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
-                    <PieChart className="w-4 h-4 text-[#555]" /> Tax & GST Analysis
-                  </h3>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] bg-[#e6f8ef] text-[#00b365] px-2.5 py-1 rounded uppercase font-bold tracking-wide border border-[#00b365]/30">Compliant</span>
-                    <button onClick={() => handleDownload("Tax and GST Analysis")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+            <DashboardWidgetLock moduleName="balance-sheet" className="flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col h-full">
+                 <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                    <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
+                       <Landmark className="w-4 h-4 text-[#555]" /> Balance Sheet Overview
+                    </h3>
+                    <button onClick={() => handleDownload("Balance Sheet Overview")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
                       <Download className="w-4 h-4" />
                     </button>
-                  </div>
-               </div>
-               <div className="p-6 flex-1 flex flex-col gap-5">
-                  <div className="flex gap-4">
-                     <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
-                        <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Output GST</p>
-                        <p className="text-[20px] font-bold text-[#222] tabular-nums">
-                          {formatCurrency(gstAnalyticsData?.gstSummary?.outputGst || 0)}
-                        </p>
-                     </div>
-                     <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
-                        <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Input ITC</p>
-                        <p className="text-[20px] font-bold text-[#00b365] tabular-nums">
-                          {formatCurrency(gstAnalyticsData?.gstSummary?.inputGst || 0)}
-                        </p>
-                     </div>
-                  </div>
-                  <div className="flex justify-between items-center p-5 mt-2 bg-[#fdf2f2] rounded border border-[#fbd4d4]">
-                     <span className="text-[16px] font-bold text-[#f0483e]">Net GST Payable</span>
-                     <span className="text-[20px] font-bold text-[#f0483e] tabular-nums">
-                       {formatCurrency(gstAnalyticsData?.gstSummary?.gstPayable || 0)}
-                     </span>
-                  </div>
-               </div>
-            </div>
+                 </div>
+                 <div className="p-6 flex-1 flex flex-col gap-4">
+                    <div className="flex justify-between items-center p-4 bg-[#f9fafd] rounded border border-[#e4e5e7]">
+                       <span className="text-[14px] font-semibold text-[#555]">Total Assets</span>
+                       <span className="text-[16px] font-bold text-[#222] tabular-nums">{formatCurrency(bsSummary.assets)}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-4 bg-[#f9fafd] rounded border border-[#e4e5e7]">
+                       <span className="text-[14px] font-semibold text-[#555]">Total Liabilities</span>
+                       <span className="text-[16px] font-bold text-[#222] tabular-nums">{formatCurrency(bsSummary.liabilities)}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-5 mt-3 bg-[#e8f2ff] rounded border border-[#cce3ff]">
+                       <span className="text-[16px] font-bold text-[#006aff]">Total Equity</span>
+                       <span className="text-[20px] font-bold text-[#006aff] tabular-nums">{formatCurrency(bsSummary.equity)}</span>
+                    </div>
+                 </div>
+              </div>
+            </DashboardWidgetLock>
 
+            {/* Tax & GST Analysis */}
+            <DashboardWidgetLock moduleName="tax-gst" className="flex flex-col min-w-0">
+              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col h-full">
+                 <div className="px-6 py-4 border-b border-[#e4e5e7] bg-[#f9fafd] flex justify-between items-center">
+                    <h3 className="text-[15px] font-bold text-[#222] flex items-center gap-2">
+                      <PieChart className="w-4 h-4 text-[#555]" /> Tax & GST Analysis
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] bg-[#e6f8ef] text-[#00b365] px-2.5 py-1 rounded uppercase font-bold tracking-wide border border-[#00b365]/30">Compliant</span>
+                      <button onClick={() => handleDownload("Tax and GST Analysis")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </div>
+                 </div>
+                 <div className="p-6 flex-1 flex flex-col gap-5">
+                    <div className="flex gap-4">
+                       <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
+                          <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Output GST</p>
+                          <p className="text-[20px] font-bold text-[#222] tabular-nums">
+                            {formatCurrency(gstAnalyticsData?.gstSummary?.outputGst || 0)}
+                          </p>
+                       </div>
+                       <div className="flex-1 p-5 border border-[#e4e5e7] rounded bg-[#f9fafd]">
+                          <p className="text-[12px] text-[#777] font-semibold uppercase tracking-wide mb-1.5">Input ITC</p>
+                          <p className="text-[20px] font-bold text-[#00b365] tabular-nums">
+                            {formatCurrency(gstAnalyticsData?.gstSummary?.inputGst || 0)}
+                          </p>
+                       </div>
+                    </div>
+                    <div className="flex justify-between items-center p-5 mt-2 bg-[#fdf2f2] rounded border border-[#fbd4d4]">
+                       <span className="text-[16px] font-bold text-[#f0483e]">Net GST Payable</span>
+                       <span className="text-[20px] font-bold text-[#f0483e] tabular-nums">
+                         {formatCurrency(gstAnalyticsData?.gstSummary?.gstPayable || 0)}
+                       </span>
+                    </div>
+                 </div>
+              </div>
+            </DashboardWidgetLock>
           </div>
 
           {/* Footer */}
@@ -1361,6 +1906,118 @@ const Dashboard = () => {
         )}
 
       </div>
+
+      {showSellerSetupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-[28px] border border-slate-200 shadow-2xl p-6 relative animate-in fade-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setShowSellerSetupModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            
+            <div className="mb-6">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 mb-3">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-900">Complete Seller Profile</h3>
+              <p className="text-xs text-slate-500 mt-1">Please enter your business seller details. These will be automatically filled in invoices and cannot be edited within the invoice form directly.</p>
+            </div>
+
+            <form onSubmit={handleSaveSellerSetup} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Seller Name *</label>
+                <input 
+                  type="text" 
+                  value={setupSellerName}
+                  onChange={(e) => setSetupSellerName(e.target.value)}
+                  placeholder="e.g. Shree Andal Software Solutions"
+                  required
+                  className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-[14px] text-[13px] focus:outline-none focus:border-[#006aff] transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Phone Number</label>
+                  <input 
+                    type="text" 
+                    value={setupSellerPhone}
+                    onChange={(e) => setSetupSellerPhone(e.target.value)}
+                    placeholder="e.g. +91 9876543210"
+                    className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-[14px] text-[13px] focus:outline-none focus:border-[#006aff] transition-colors"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Seller Email</label>
+                  <input 
+                    type="email" 
+                    value={setupSellerEmail}
+                    onChange={(e) => setSetupSellerEmail(e.target.value)}
+                    placeholder="e.g. sales@company.com"
+                    className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-[14px] text-[13px] focus:outline-none focus:border-[#006aff] transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Seller GSTIN</label>
+                  <input 
+                    type="text" 
+                    value={setupSellerGSTIN}
+                    onChange={(e) => setSetupSellerGSTIN(e.target.value.toUpperCase())}
+                    placeholder="e.g. 33AAAAA1111A1Z1"
+                    className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-[14px] text-[13px] focus:outline-none focus:border-[#006aff] transition-colors"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Seller State</label>
+                  <select 
+                    value={setupSellerState}
+                    onChange={(e) => setSetupSellerState(e.target.value)}
+                    className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-[14px] text-[13px] focus:outline-none focus:border-[#006aff] transition-colors"
+                  >
+                    {INDIAN_STATES.map((st) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Seller Address</label>
+                <textarea 
+                  value={setupSellerAddress}
+                  onChange={(e) => setSetupSellerAddress(e.target.value)}
+                  placeholder="Enter full business address"
+                  rows={2}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-[14px] text-[13px] focus:outline-none focus:border-[#006aff] transition-colors resize-none"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowSellerSetupModal(false)}
+                  className="px-4 py-2.5 rounded-full border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
+                >
+                  Skip for now
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingSetup}
+                  className="px-5 py-2.5 rounded-full bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+                >
+                  {isSubmittingSetup ? "Saving..." : "Save Details"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      <UpgradeModal />
     </div>
   );
 };

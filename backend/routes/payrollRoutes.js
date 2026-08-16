@@ -3,8 +3,9 @@ import mongoose from "mongoose";
 
 const router = express.Router();
 
-// ✅ Enhanced Payroll Schema with all requirement fields
+// ✅ Enhanced Payroll Schema with all requirement fields & tenant isolation
 const payrollSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   employeeName: { type: String, required: true },
   employeeId: { type: String, required: true },
   employeeRole: { type: String, required: true },
@@ -36,7 +37,10 @@ const Payroll = mongoose.model("Payroll", payrollSchema);
 // ✅ POST route to store enhanced payroll data
 router.post("/add", async (req, res) => {
   try {
-    const payrollData = req.body;
+    const payrollData = {
+      ...req.body,
+      userId: req.user.id
+    };
     const newPayroll = new Payroll(payrollData);
     await newPayroll.save();
     res.status(201).json({ message: "Payroll data saved successfully!" });
@@ -46,10 +50,10 @@ router.post("/add", async (req, res) => {
   }
 });
 
-// ✅ GET route to fetch all payroll records
+// ✅ GET route to fetch all payroll records for authenticated user
 router.get("/all", async (req, res) => {
   try {
-    const payrolls = await Payroll.find().sort({ createdAt: -1 });
+    const payrolls = await Payroll.find({ userId: req.user.id }).sort({ createdAt: -1 });
     res.json(payrolls);
   } catch (error) {
     console.error("Error fetching payroll data:", error);
@@ -57,10 +61,13 @@ router.get("/all", async (req, res) => {
   }
 });
 
-// ✅ GET route for specific employee payroll history
+// ✅ GET route for specific employee payroll history for authenticated user
 router.get("/employee/:employeeId", async (req, res) => {
   try {
-    const payrolls = await Payroll.find({ employeeId: req.params.employeeId }).sort({ createdAt: -1 });
+    const payrolls = await Payroll.find({ 
+      employeeId: req.params.employeeId, 
+      userId: req.user.id 
+    }).sort({ createdAt: -1 });
     res.json(payrolls);
   } catch (error) {
     console.error("Error fetching employee payroll:", error);

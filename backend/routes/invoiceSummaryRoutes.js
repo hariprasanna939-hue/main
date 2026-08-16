@@ -1,6 +1,7 @@
 import express from "express";
-import jwt from "jsonwebtoken";
 import InvoiceSummary from "../models/InvoiceSummary.js";
+
+import jwt from "jsonwebtoken";
 
 const verifyTokenOptional = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -26,12 +27,13 @@ const router = express.Router();
 // ✅ 1. Create New Invoice Summary
 router.post("/create", async (req, res) => {
     try {
-        const { productName, quantity, rate, tax, createdbyid } = req.body;
+        const { productName, quantity, rate, tax } = req.body;
+        const createdbyid = req.user.id; // Enforce user ID from authentication token
 
         // Validate required fields
-        if (!productName || quantity === undefined || rate === undefined || !createdbyid) {
+        if (!productName || quantity === undefined || rate === undefined) {
             return res.status(400).json({
-                message: "Missing required fields: productName, quantity, rate, and createdbyid are required"
+                message: "Missing required fields: productName, quantity, and rate are required"
             });
         }
 
@@ -65,8 +67,8 @@ router.post("/create", async (req, res) => {
     }
 });
 
-// ✅ 2. Get All Invoice Summaries
-router.get("/all", verifyTokenOptional, async (req, res) => {
+// ✅ 2. Get All Invoice Summaries for Authenticated User
+router.get("/all", async (req, res) => {
     try {
         const {
             page = 1,
@@ -74,13 +76,6 @@ router.get("/all", verifyTokenOptional, async (req, res) => {
             sortBy = 'id',
             sortOrder = 'desc'
         } = req.query;
-
-        if (!req.user) {
-            return res.json({
-                invoiceSummaries: [],
-                pagination: { total: 0, page: 1, limit: parseInt(limit), pages: 0 }
-            });
-        }
 
         const query = { createdbyid: req.user.id };
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -112,16 +107,17 @@ router.get("/all", verifyTokenOptional, async (req, res) => {
     }
 });
 
-// ✅ 3. Get Single Invoice Summary by ID
+// ✅ 3. Get Single Invoice Summary by ID for Authenticated User
 router.get("/:id", async (req, res) => {
     try {
         const invoiceSummary = await InvoiceSummary.findOne({
-            id: parseInt(req.params.id)
+            id: parseInt(req.params.id),
+            createdbyid: req.user.id
         });
 
         if (!invoiceSummary) {
             return res.status(404).json({
-                message: "Invoice summary not found"
+                message: "Invoice summary not found or access denied"
             });
         }
 
@@ -135,9 +131,13 @@ router.get("/:id", async (req, res) => {
     }
 });
 
-// ✅ 4. Get Invoice Summaries by User ID
+// ✅ 4. Get Invoice Summaries by User ID (Ensuring they request their own data)
 router.get("/user/:userId", async (req, res) => {
     try {
+        if (req.params.userId !== req.user.id) {
+            return res.status(403).json({ message: "Access denied. Cannot view another user's invoice summaries." });
+        }
+
         const {
             page = 1,
             limit = 20
@@ -146,14 +146,14 @@ router.get("/user/:userId", async (req, res) => {
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const invoiceSummaries = await InvoiceSummary.find({
-            createdbyid: req.params.userId
+            createdbyid: req.user.id
         })
             .sort({ id: -1 })
             .skip(skip)
             .limit(parseInt(limit));
 
         const total = await InvoiceSummary.countDocuments({
-            createdbyid: req.params.userId
+            createdbyid: req.user.id
         });
 
         res.json({
@@ -174,7 +174,7 @@ router.get("/user/:userId", async (req, res) => {
     }
 });
 
-// ✅ 5. Update Invoice Summary
+// ✅ 5. Update Invoice Summary for Authenticated User
 router.put("/:id", async (req, res) => {
     try {
         const { productName, quantity, rate, tax } = req.body;
@@ -209,14 +209,14 @@ router.put("/:id", async (req, res) => {
         updateData.updatedAt = new Date();
 
         const updatedInvoiceSummary = await InvoiceSummary.findOneAndUpdate(
-            { id: parseInt(req.params.id) },
+            { id: parseInt(req.params.id), createdbyid: req.user.id },
             updateData,
             { new: true, runValidators: true }
         );
 
         if (!updatedInvoiceSummary) {
             return res.status(404).json({
-                message: "Invoice summary not found"
+                message: "Invoice summary not found or access denied"
             });
         }
 
@@ -233,16 +233,17 @@ router.put("/:id", async (req, res) => {
     }
 });
 
-// ✅ 6. Delete Invoice Summary
+// ✅ 6. Delete Invoice Summary for Authenticated User
 router.delete("/:id", async (req, res) => {
     try {
         const deletedInvoiceSummary = await InvoiceSummary.findOneAndDelete({
-            id: parseInt(req.params.id)
+            id: parseInt(req.params.id),
+            createdbyid: req.user.id
         });
 
         if (!deletedInvoiceSummary) {
             return res.status(404).json({
-                message: "Invoice summary not found"
+                message: "Invoice summary not found or access denied"
             });
         }
 
@@ -259,12 +260,10 @@ router.delete("/:id", async (req, res) => {
     }
 });
 
-// ✅ 7. Get Invoice Summary Statistics
+// ✅ 7. Get Invoice Summary Statistics for Authenticated User
 router.get("/stats/overview", async (req, res) => {
     try {
-        const { userId } = req.query;
-
-        const matchQuery = userId ? { createdbyid: userId } : {};
+        const matchQuery = { createdbyid: req.user.id };
 
         const stats = await InvoiceSummary.aggregate([
             { $match: matchQuery },
@@ -302,22 +301,23 @@ router.get("/stats/overview", async (req, res) => {
     }
 });
 
-// ✅ 8. Search Invoice Summaries by Product Name
+// ✅ 8. Search Invoice Summaries by Product Name for Authenticated User
 router.get("/search/:productName", async (req, res) => {
     try {
         const { page = 1, limit = 20 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const invoiceSummaries = await InvoiceSummary.find({
-            productName: { $regex: req.params.productName, $options: 'i' }
-        })
+        const query = {
+            productName: { $regex: req.params.productName, $options: 'i' },
+            createdbyid: req.user.id
+        };
+
+        const invoiceSummaries = await InvoiceSummary.find(query)
             .sort({ id: -1 })
             .skip(skip)
             .limit(parseInt(limit));
 
-        const total = await InvoiceSummary.countDocuments({
-            productName: { $regex: req.params.productName, $options: 'i' }
-        });
+        const total = await InvoiceSummary.countDocuments(query);
 
         res.json({
             invoiceSummaries,

@@ -5,6 +5,17 @@ import jwt from "jsonwebtoken";
 import cors from "cors";
 import dotenv from "dotenv";
 import Razorpay from "razorpay";
+import Plan from "./models/Plan.js";
+import Subscription from "./models/Subscription.js";
+import { authenticateUser, checkSubscription, checkModuleAccess } from "./utils/authMiddleware.js";
+
+const planKeyToName = {
+  trial: "Sandbox",
+  monthly: "Express",
+  annual: "Professional",
+  lifetime: "Enterprise"
+};
+
 import payrollRoutes from "./routes/payrollRoutes.js";
 import taxRoutes from "./routes/taxRoutes.js";
 import balanceSheetRoutes from "./routes/balanceSheetRoutes.js";
@@ -134,6 +145,12 @@ const userSchema = new mongoose.Schema({
   razorpayPaymentId: { type: String },
   razorpayOrderId: { type: String },
   createdAt: { type: Date, default: Date.now },
+  sellerName: { type: String },
+  sellerPhone: { type: String },
+  sellerEmail: { type: String },
+  sellerGSTIN: { type: String },
+  sellerState: { type: String },
+  sellerAddress: { type: String },
 });
 
 const User = mongoose.model("User", userSchema);
@@ -199,6 +216,19 @@ app.post("/api/signup-trial", async (req, res) => {
     });
 
     await newUser.save();
+
+    // Create Subscription record in database
+    const sandboxPlan = await Plan.findOne({ name: "Sandbox" });
+    if (sandboxPlan) {
+      const subscription = new Subscription({
+        userId: newUser._id,
+        planId: sandboxPlan._id,
+        status: "active",
+        startDate: subscriptionStartDate,
+        endDate: trialEndDate
+      });
+      await subscription.save();
+    }
 
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -304,6 +334,12 @@ app.get("/api/user", verifyToken, async (req, res) => {
       subscriptionStartDate: user.subscriptionStartDate,
       subscriptionEndDate: user.subscriptionEndDate,
       trialEndDate: user.trialEndDate,
+      sellerName: user.sellerName || "",
+      sellerPhone: user.sellerPhone || "",
+      sellerEmail: user.sellerEmail || "",
+      sellerGSTIN: user.sellerGSTIN || "",
+      sellerState: user.sellerState || "",
+      sellerAddress: user.sellerAddress || "",
     });
   } catch (error) {
     console.error("Get User Error:", error);
@@ -314,7 +350,7 @@ app.get("/api/user", verifyToken, async (req, res) => {
 // ✅ UPDATE USER PROFILE (Protected Route)
 app.put("/api/user", verifyToken, async (req, res) => {
   try {
-    const { name, email } = req.body;
+    const { name, email, sellerName, sellerPhone, sellerEmail, sellerGSTIN, sellerState, sellerAddress } = req.body;
     const trimmedEmail = email?.trim().toLowerCase();
 
     if (!trimmedEmail) {
@@ -335,6 +371,12 @@ app.put("/api/user", verifyToken, async (req, res) => {
       {
         name: name?.trim() || trimmedEmail.split("@")[0],
         email: trimmedEmail,
+        sellerName,
+        sellerPhone,
+        sellerEmail,
+        sellerGSTIN,
+        sellerState,
+        sellerAddress,
       },
       { new: true, runValidators: true }
     ).select("-password");
@@ -355,6 +397,12 @@ app.put("/api/user", verifyToken, async (req, res) => {
         subscriptionStartDate: user.subscriptionStartDate,
         subscriptionEndDate: user.subscriptionEndDate,
         trialEndDate: user.trialEndDate,
+        sellerName: user.sellerName || "",
+        sellerPhone: user.sellerPhone || "",
+        sellerEmail: user.sellerEmail || "",
+        sellerGSTIN: user.sellerGSTIN || "",
+        sellerState: user.sellerState || "",
+        sellerAddress: user.sellerAddress || "",
       },
     });
   } catch (error) {
@@ -430,9 +478,23 @@ app.post("/api/create-order", async (req, res) => {
       });
     }
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+    // Allow existing user if they are logged in and upgrading (checking authorization header)
+    const token = req.headers.authorization?.split(" ")[1];
+    let isUpgrade = false;
+    if (token) {
+      try {
+        jwt.verify(token, process.env.JWT_SECRET);
+        isUpgrade = true;
+      } catch (err) {
+        // Ignore token error and proceed with standard check
+      }
+    }
+
+    if (!isUpgrade) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ message: "User already exists" });
+      }
     }
 
     // Razorpay expects amount in paise (smallest currency unit)
@@ -549,6 +611,20 @@ app.post("/api/verify-payment", async (req, res) => {
 
       await newUser.save();
 
+      // Create Subscription record in database
+      const planName = planKeyToName[plan] || "Express";
+      const planDoc = await Plan.findOne({ name: planName });
+      if (planDoc) {
+        const subscription = new Subscription({
+          userId: newUser._id,
+          planId: planDoc._id,
+          status: "active",
+          startDate: subscriptionStartDate,
+          endDate: subscriptionEndDate
+        });
+        await subscription.save();
+      }
+
       const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
       return res.status(201).json({
@@ -596,6 +672,20 @@ app.post("/api/verify-payment", async (req, res) => {
 
     await newUser.save();
 
+    // Create Subscription record in database
+    const planName = planKeyToName[plan] || "Express";
+    const planDoc = await Plan.findOne({ name: planName });
+    if (planDoc) {
+      const subscription = new Subscription({
+        userId: newUser._id,
+        planId: planDoc._id,
+        status: "active",
+        startDate: subscriptionStartDate,
+        endDate: subscriptionEndDate
+      });
+      await subscription.save();
+    }
+
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.status(201).json({
@@ -612,27 +702,158 @@ app.post("/api/verify-payment", async (req, res) => {
   }
 });
 
+// ✅ UPGRADE SUBSCRIPTION FOR LOGGED-IN USERS
+app.post("/api/upgrade-subscription", authenticateUser, async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      plan = "monthly"
+    } = req.body;
+
+    // Validate plan
+    if (!subscriptionPlans[plan]) {
+      return res.status(400).json({ message: "Invalid subscription plan" });
+    }
+
+    const selectedPlan = subscriptionPlans[plan];
+
+    // Calculate subscription dates
+    const subscriptionStartDate = new Date();
+    let subscriptionEndDate = null;
+
+    if (plan === "monthly") {
+      subscriptionEndDate = new Date(subscriptionStartDate);
+      subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
+    } else if (plan === "annual") {
+      subscriptionEndDate = new Date(subscriptionStartDate);
+      subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
+    }
+    // Lifetime plan has no end date (null)
+
+    // Verify payment
+    if (process.env.DEV_MODE === "true" || razorpay_order_id?.startsWith("dev_order_")) {
+      console.log("🔧 Development mode: Bypassing payment verification for upgrade");
+    } else {
+      if (!razorpay_payment_id || !razorpay_order_id) {
+        return res.status(400).json({ message: "Payment details are required" });
+      }
+
+      const crypto = await import('crypto');
+      const expectedSignature = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest('hex');
+
+      if (expectedSignature !== razorpay_signature) {
+        return res.status(400).json({ message: "Invalid payment signature" });
+      }
+    }
+
+    // Find database Plan
+    const planName = planKeyToName[plan] || "Express";
+    const planDoc = await Plan.findOne({ name: planName });
+    if (!planDoc) {
+      return res.status(500).json({ message: "Subscription plan not found in database configuration." });
+    }
+
+    // Update user subscription plan details
+    const User = mongoose.model("User");
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        subscriptionStatus: "active",
+        subscriptionPlan: plan,
+        subscriptionAmount: selectedPlan.totalAmount,
+        subscriptionStartDate: subscriptionStartDate,
+        subscriptionEndDate: subscriptionEndDate,
+        razorpayPaymentId: razorpay_payment_id || "dev_payment_" + Date.now(),
+        razorpayOrderId: razorpay_order_id || "dev_order_" + Date.now()
+      },
+      { new: true }
+    ).select("-password");
+
+    // Set any currently active subscriptions to expired
+    await Subscription.updateMany(
+      { userId: req.user._id, status: "active" },
+      { status: "expired" }
+    );
+
+    // Create new active subscription
+    const newSubscription = new Subscription({
+      userId: req.user._id,
+      planId: planDoc._id,
+      status: "active",
+      startDate: subscriptionStartDate,
+      endDate: subscriptionEndDate
+    });
+    await newSubscription.save();
+
+    res.json({
+      message: "Subscription upgraded successfully",
+      user: {
+        id: updatedUser._id,
+        email: updatedUser.email,
+        name: updatedUser.name,
+        role: updatedUser.role,
+        subscriptionStatus: updatedUser.subscriptionStatus,
+        subscriptionPlan: updatedUser.subscriptionPlan,
+        subscriptionAmount: updatedUser.subscriptionAmount,
+        subscriptionStartDate: updatedUser.subscriptionStartDate,
+        subscriptionEndDate: updatedUser.subscriptionEndDate,
+        trialEndDate: updatedUser.trialEndDate
+      }
+    });
+
+  } catch (error) {
+    console.error("Upgrade Subscription Error:", error);
+    res.status(500).json({ message: "Subscription upgrade failed" });
+  }
+});
+
 // ✅ Use Routes
-app.use("/api/payroll", payrollRoutes);
-app.use("/api/tax", taxRoutes);
-app.use("/api/balance", balanceSheetRoutes);
-app.use("/api/profitloss", profitLossRoutes);
-app.use("/api/cashflow", cashflowRoutes);
-app.use("/api/financial-ratios", financialRatiosRoutes);
-app.use("/api/cashflow-statement", cashFlowStatementRoutes);
-app.use("/api/civil", civilRoutes);
-app.use("/api/bookkeeping", bookkeepingRoutes);
-app.use("/api/inventory", inventoryRoutes);
-app.use("/api/bank-reconciliation", bankReconciliationRoutes);
-app.use("/api/fraud-detection", fraudDetectionRoutes);
-app.use("/api/invoice", invoiceRoutes);
-app.use("/api/invoice-summary", invoiceSummaryRoutes);
-app.use("/api/ai", aiRoutes);
-app.use("/api/purchase-invoice", purchaseInvoiceRoutes);
-app.use("/api/scanned-docs", scannedDocRoutes);
-app.use("/api/civil-engineering", civilEngineeringRoutes);
-app.use("/api/customers", customerRoutes);
-app.use("/api/invoice-templates", invoiceTemplateRoutes);
+app.use("/api/payroll", authenticateUser, checkSubscription, checkModuleAccess("payroll"), payrollRoutes);
+app.use("/api/tax", authenticateUser, checkSubscription, checkModuleAccess("tax-gst"), taxRoutes);
+app.use("/api/balance", authenticateUser, checkSubscription, checkModuleAccess("balance-sheet"), balanceSheetRoutes);
+app.use("/api/profitloss", authenticateUser, checkSubscription, checkModuleAccess("profit-loss"), profitLossRoutes);
+app.use("/api/cashflow", authenticateUser, checkSubscription, checkModuleAccess("cashflow"), cashflowRoutes);
+app.use("/api/financial-ratios", authenticateUser, checkSubscription, checkModuleAccess("financial-ratios"), financialRatiosRoutes);
+app.use("/api/cashflow-statement", authenticateUser, checkSubscription, checkModuleAccess("cashflow-statement"), cashFlowStatementRoutes);
+app.use("/api/civil", authenticateUser, checkSubscription, checkModuleAccess("civil-engineering"), civilRoutes);
+app.use("/api/bookkeeping", authenticateUser, checkSubscription, checkModuleAccess("bookkeeping"), bookkeepingRoutes);
+app.use("/api/inventory", authenticateUser, checkSubscription, checkModuleAccess("inventory"), inventoryRoutes);
+app.use("/api/bank-reconciliation", authenticateUser, checkSubscription, checkModuleAccess("bank-reconciliation"), bankReconciliationRoutes);
+app.use("/api/fraud-detection", authenticateUser, checkSubscription, checkModuleAccess("fraud-detection"), fraudDetectionRoutes);
+app.use("/api/invoice", authenticateUser, checkSubscription, checkModuleAccess("invoice"), invoiceRoutes);
+app.use("/api/invoice-summary", authenticateUser, checkSubscription, checkModuleAccess("invoice"), invoiceSummaryRoutes);
+app.use("/api/ai", authenticateUser, checkSubscription, aiRoutes);
+app.use("/api/purchase-invoice", authenticateUser, checkSubscription, checkModuleAccess("invoice"), purchaseInvoiceRoutes);
+app.use("/api/scanned-docs", authenticateUser, checkSubscription, checkModuleAccess("invoice"), scannedDocRoutes);
+app.use("/api/civil-engineering", authenticateUser, checkSubscription, checkModuleAccess("civil-engineering"), civilEngineeringRoutes);
+app.use("/api/customers", authenticateUser, checkSubscription, checkModuleAccess("invoice"), customerRoutes);
+app.use("/api/invoice-templates", authenticateUser, checkSubscription, checkModuleAccess("invoice"), invoiceTemplateRoutes);
+
+const seedPlans = async () => {
+  const plans = [
+    { name: "Sandbox", allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping"] },
+    { name: "Express", allowedModules: ["dashboard", "invoice", "inventory"] },
+    { name: "Professional", allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios"] },
+    { name: "Enterprise", allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering"] }
+  ];
+
+  try {
+    for (const p of plans) {
+      await Plan.findOneAndUpdate(
+        { name: p.name },
+        { allowedModules: p.allowedModules },
+        { upsert: true, new: true }
+      );
+    }
+    console.log("✅ Subscription Plans Seeded Successfully");
+  } catch (err) {
+    console.error("❌ Failed to seed subscription plans:", err.message);
+  }
+};
 
 // ✅ Start Server (after MongoDB connection)
 const PORT = process.env.PORT || 5000;
@@ -642,6 +863,9 @@ const startServer = async () => {
   try {
     // Connect to MongoDB first
     await connectToMongoDB();
+
+    // Seed subscription plans
+    await seedPlans();
 
     // Then start the server
     app.listen(PORT, HOST, () => {

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { API_ENDPOINTS } from "@/lib/api";
 import { getTrialExpiryLabel, isTrialExpired } from "@/lib/trial";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 type UserProfile = {
   id: string;
@@ -18,6 +19,12 @@ type UserProfile = {
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
   trialEndDate?: string;
+  sellerName?: string;
+  sellerPhone?: string;
+  sellerEmail?: string;
+  sellerGSTIN?: string;
+  sellerState?: string;
+  sellerAddress?: string;
 };
 
 const planLabelMap: Record<NonNullable<UserProfile["subscriptionPlan"]>, string> = {
@@ -27,51 +34,51 @@ const planLabelMap: Record<NonNullable<UserProfile["subscriptionPlan"]>, string>
   lifetime: "Lifetime",
 };
 
+const INDIAN_STATES = [
+  "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
+  "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa",
+  "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka",
+  "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur",
+  "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan",
+  "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
+];
+
 const ProfileSettings = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user: contextUser, loading: contextLoading, refreshUser } = useSubscription();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
+  const [sellerName, setSellerName] = useState("");
+  const [sellerPhone, setSellerPhone] = useState("");
+  const [sellerEmail, setSellerEmail] = useState("");
+  const [sellerGSTIN, setSellerGSTIN] = useState("");
+  const [sellerState, setSellerState] = useState("Tamil Nadu");
+  const [sellerAddress, setSellerAddress] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/auth");
-      return;
+    if (contextUser) {
+      setUser(contextUser);
+      setDisplayName(contextUser.name?.trim() || contextUser.email.split("@")[0]);
+      setEmail(contextUser.email);
+      setSellerName(contextUser.sellerName || "");
+      setSellerPhone(contextUser.sellerPhone || "");
+      setSellerEmail(contextUser.sellerEmail || "");
+      setSellerGSTIN(contextUser.sellerGSTIN || "");
+      setSellerState(contextUser.sellerState || "Tamil Nadu");
+      setSellerAddress(contextUser.sellerAddress || "");
+      setLoading(false);
     }
+  }, [contextUser]);
 
-    fetch(API_ENDPOINTS.USER, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch user");
-        return res.json();
-      })
-      .then((data: UserProfile) => {
-        setUser(data);
-        setDisplayName(data.name?.trim() || data.email.split("@")[0]);
-        setEmail(data.email);
-
-        if (isTrialExpired(data)) {
-          toast({
-            title: "Free trial ended",
-            description: "Please choose a paid plan to continue using your account.",
-            variant: "destructive",
-          });
-          localStorage.removeItem("token");
-          navigate("/auth?tab=signup&plan=monthly");
-        }
-      })
-      .catch((error) => {
-        console.error("Error fetching profile:", error);
-        localStorage.removeItem("token");
-        navigate("/auth");
-      })
-      .finally(() => setLoading(false));
-  }, [navigate, toast]);
+  useEffect(() => {
+    if (!localStorage.getItem("token")) {
+      navigate("/auth");
+    }
+  }, [navigate]);
 
   const profileInitial = useMemo(() => {
     return (displayName || email || "U").charAt(0).toUpperCase();
@@ -98,6 +105,12 @@ const ProfileSettings = () => {
       body: JSON.stringify({
         name: displayName.trim(),
         email: email.trim(),
+        sellerName: sellerName.trim(),
+        sellerPhone: sellerPhone.trim(),
+        sellerEmail: sellerEmail.trim(),
+        sellerGSTIN: sellerGSTIN.trim(),
+        sellerState: sellerState,
+        sellerAddress: sellerAddress.trim(),
       }),
     })
       .then(async (res) => {
@@ -112,7 +125,15 @@ const ProfileSettings = () => {
           setUser(payload.user);
           setDisplayName(payload.user.name?.trim() || payload.user.email.split("@")[0]);
           setEmail(payload.user.email);
+          setSellerName(payload.user.sellerName || "");
+          setSellerPhone(payload.user.sellerPhone || "");
+          setSellerEmail(payload.user.sellerEmail || "");
+          setSellerGSTIN(payload.user.sellerGSTIN || "");
+          setSellerState(payload.user.sellerState || "Tamil Nadu");
+          setSellerAddress(payload.user.sellerAddress || "");
         }
+
+        refreshUser();
 
         toast({
           title: "Profile updated",
@@ -193,6 +214,80 @@ const ProfileSettings = () => {
                   placeholder="name@example.com"
                 />
               </label>
+            </div>
+
+            {/* Seller Details Section */}
+            <div className="mt-8 pt-6 border-t border-slate-100">
+              <h3 className="text-md font-bold tracking-tight text-slate-805 uppercase tracking-[0.12em] text-xs mb-4 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-slate-900"></span>
+                Seller Details
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-505">Seller Name *</span>
+                  <Input
+                    value={sellerName}
+                    onChange={(e) => setSellerName(e.target.value)}
+                    className="h-12 rounded-[18px] border-slate-200 bg-slate-50 text-slate-900 focus-visible:ring-0"
+                    placeholder="Enter seller name"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-505">Phone Number</span>
+                  <Input
+                    value={sellerPhone}
+                    onChange={(e) => setSellerPhone(e.target.value)}
+                    className="h-12 rounded-[18px] border-slate-200 bg-slate-50 text-slate-900 focus-visible:ring-0"
+                    placeholder="Enter phone number"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-505">Seller Email</span>
+                  <Input
+                    value={sellerEmail}
+                    onChange={(e) => setSellerEmail(e.target.value)}
+                    className="h-12 rounded-[18px] border-slate-200 bg-slate-50 text-slate-900 focus-visible:ring-0"
+                    placeholder="seller@example.com"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-505">Seller GSTIN</span>
+                  <Input
+                    value={sellerGSTIN}
+                    onChange={(e) => setSellerGSTIN(e.target.value.toUpperCase())}
+                    className="h-12 rounded-[18px] border-slate-200 bg-slate-50 text-slate-900 focus-visible:ring-0"
+                    placeholder="Enter seller GSTIN"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-505">Seller State</span>
+                  <select
+                    value={sellerState}
+                    onChange={(e) => setSellerState(e.target.value)}
+                    className="flex h-12 w-full rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 ring-offset-white focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {INDIAN_STATES.map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-505">Seller Address</span>
+                  <Input
+                    value={sellerAddress}
+                    onChange={(e) => setSellerAddress(e.target.value)}
+                    className="h-12 rounded-[18px] border-slate-200 bg-slate-50 text-slate-900 focus-visible:ring-0"
+                    placeholder="Full seller address"
+                  />
+                </label>
+              </div>
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-3">
