@@ -90,7 +90,7 @@ const configSchema = new mongoose.Schema({
   },
   footer: {
     show: { type: Boolean, default: true },
-    text: { type: String, default: 'Thank you for choosing FinSmart.' }
+    text: { type: String, default: 'Powered by SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED ✨.' }
   },
   design: {
     primaryColor: { type: String, default: '#4f46e5' }, // indigo-600

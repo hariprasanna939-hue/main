@@ -160,6 +160,8 @@ interface InvoiceData {
   sellerEmail?: string;
   sellerAddress?: string;
   customerAddress?: string;
+  notes?: string;
+  termsAndConditions?: string;
 }
 
 // Inventory Item interface (from Inventory Management)
@@ -353,7 +355,9 @@ const AutomationInvoice = () => {
     paymentTerms: 'Due on Receipt',
     sellerEmail: '',
     sellerAddress: '',
-    customerAddress: ''
+    customerAddress: '',
+    notes: '',
+    termsAndConditions: ''
   });
 
   // New item form state
@@ -405,7 +409,7 @@ const AutomationInvoice = () => {
       signature: { show: false, name: "", designation: "", imageUrl: "" },
       footer: { show: true, text: "" },
       design: { primaryColor: "#4f46e5", secondaryColor: "#f8fafc", textColor: "#0f172a", backgroundColor: "#ffffff", borderColor: "#cbd5e1", fontFamily: "Inter", fontSize: 12, borderStyle: "light" },
-      sectionsOrder: ["header", "seller", "customer", "invoiceInfo", "items", "tax", "payment", "notes", "signature", "footer"]
+      sectionsOrder: ["header", "seller", "customer", "invoiceInfo", "items", "tax", "payment", "notes", "terms", "signature", "footer"]
     };
   }, [userTemplates, selectedTemplateId]);
 
@@ -462,7 +466,8 @@ const AutomationInvoice = () => {
           sellerEmail: data.sellerEmail || prev.sellerEmail || "",
           sellerGSTIN: data.sellerGSTIN || prev.sellerGSTIN || "",
           businessState: data.sellerState || prev.businessState || "Tamil Nadu",
-          sellerAddress: data.sellerAddress || prev.sellerAddress || ""
+          sellerAddress: data.sellerAddress || prev.sellerAddress || "",
+          salespersonName: data.sellerName || prev.salespersonName || ""
         }));
       }
     } catch (err) {
@@ -1285,6 +1290,8 @@ const AutomationInvoice = () => {
         balanceDue: currentInvoice.balance,
         paymentMethod: currentInvoice.saleType || 'cash',
         gstPortalJson: buildGstPortalJson({ ...currentInvoice, dueReminderDate }),
+        notes: currentInvoice.notes || '',
+        termsAndConditions: currentInvoice.termsAndConditions || '',
         status: statusValue,
         // ✅ Snapshot the currently active template design so the public view matches exactly
         templateId: selectedTemplateId || undefined,
@@ -1359,14 +1366,18 @@ const AutomationInvoice = () => {
   // Reset form
   const resetForm = () => {
     setLastSavedId(null);
-    setCurrentInvoice({
+    setCurrentInvoice(prev => ({
       type: invoiceType,
       saleType: 'cash',
       partyName: '',
       phoneNo: '',
-      sellerName: '',
-      sellerPhone: '',
-      sellerGSTIN: '',
+      sellerName: prev.sellerName,
+      sellerPhone: prev.sellerPhone,
+      sellerGSTIN: prev.sellerGSTIN,
+      sellerEmail: prev.sellerEmail,
+      sellerAddress: prev.sellerAddress,
+      businessState: prev.businessState,
+      salespersonName: prev.sellerName,
       transactionType: 'B2C',
       invoiceSize: 'A4',
       dueReminderDays: 7,
@@ -1374,7 +1385,6 @@ const AutomationInvoice = () => {
       invoiceNo: generateInvoiceNo(invoiceType),
       invoiceDate: new Date().toISOString().split('T')[0],
       stateOfSupply: '',
-      businessState: BUSINESS_STATE,
       items: [],
       subtotal: 0,
       totalSgst: 0,
@@ -1387,8 +1397,10 @@ const AutomationInvoice = () => {
       paymentMethod: 'cash',
       uploadedBill: null,
       customerEmail: '',
-      customerGSTIN: ''
-    });
+      customerGSTIN: '',
+      notes: '',
+      termsAndConditions: ''
+    }));
     // Reset new item form
     setNewItem({
       inventoryItemId: undefined,
@@ -1460,7 +1472,7 @@ const AutomationInvoice = () => {
         signature: { show: false, name: "", designation: "", imageUrl: "" },
         footer: { show: true, text: "" },
         design: { primaryColor: "#4f46e5", secondaryColor: "#f8fafc", textColor: "#0f172a", backgroundColor: "#ffffff", borderColor: "#cbd5e1", fontFamily: "Inter", fontSize: 12, borderStyle: "light" as const },
-        sectionsOrder: ["header", "seller", "customer", "invoiceInfo", "items", "tax", "payment", "notes", "signature", "footer"]
+        sectionsOrder: ["header", "seller", "customer", "invoiceInfo", "items", "tax", "payment", "notes", "terms", "signature", "footer"]
       };
 
       // Resolve active template config — prefer snapshot, then selected template, then defaults
@@ -1839,26 +1851,32 @@ const AutomationInvoice = () => {
           currentY += boxHeight + 8;
         }
 
-        else if (sectionName === "notes" && notes.show && notes.defaultText) {
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9);
-          doc.text(notes.label || "Notes:", 15, currentY);
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(8);
-          const noteLines = doc.splitTextToSize(notes.defaultText, 100);
-          doc.text(noteLines, 15, currentY + 5);
-          currentY += (noteLines.length * 4) + 8;
+        else if (sectionName === "notes" && notes.show) {
+          const notesText = data.notes || notes.defaultText;
+          if (notesText) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.text(notes.label || "Notes:", 15, currentY);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            const noteLines = doc.splitTextToSize(notesText, 100);
+            doc.text(noteLines, 15, currentY + 5);
+            currentY += (noteLines.length * 4) + 8;
+          }
         }
 
-        else if (sectionName === "terms" && terms.show && terms.defaultText) {
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9);
-          doc.text(terms.label || "Terms & Conditions:", 15, currentY);
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(8);
-          const termLines = doc.splitTextToSize(terms.defaultText, 100);
-          doc.text(termLines, 15, currentY + 5);
-          currentY += (termLines.length * 4) + 8;
+        else if (sectionName === "terms" && terms.show) {
+          const termsText = data.termsAndConditions || terms.defaultText;
+          if (termsText) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.text(terms.label || "Terms & Conditions:", 15, currentY);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            const termLines = doc.splitTextToSize(termsText, 100);
+            doc.text(termLines, 15, currentY + 5);
+            currentY += (termLines.length * 4) + 8;
+          }
         }
 
         else if (sectionName === "signature" && signature.show) {
@@ -2427,9 +2445,6 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                         </SelectTrigger>
                         <SelectContent className="bg-white border border-slate-200 text-slate-900">
                           <SelectItem value="INR">INR ₹</SelectItem>
-                          <SelectItem value="USD">USD $</SelectItem>
-                          <SelectItem value="EUR">EUR €</SelectItem>
-                          <SelectItem value="GBP">GBP £</SelectItem>
                         </SelectContent>
                       </Select>
                       <Input
