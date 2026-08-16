@@ -30,6 +30,7 @@ import InvoiceTemplates from "./pages/InvoiceTemplates";
 import InvoiceTemplateEditor from "./pages/InvoiceTemplateEditor";
 import AiAccountingExplained from "./pages/AiAccountingExplained";
 import ThankYou from "./pages/ThankYou";
+import ResetPassword from "./pages/ResetPassword";
 
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { SubscriptionGuard } from "@/components/SubscriptionGuard";
@@ -133,6 +134,7 @@ const App = () => {
               <Route path="/invoice/view/:id" element={<PublicInvoiceView />} />
               <Route path="/purchase-invoice/view/:id" element={<PublicPurchaseInvoiceView />} />
               <Route path="/thank-you" element={<ThankYou />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>

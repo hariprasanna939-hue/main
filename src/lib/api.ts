@@ -23,6 +23,8 @@ export const API_ENDPOINTS = {
   SIGNIN: `${API_BASE_URL}/signin`,
   USER: `${API_BASE_URL}/user`,
   UPDATE_PROFILE: `${API_BASE_URL}/user`,
+  FORGOT_PASSWORD: `${API_BASE_URL}/forgot-password`,
+  RESET_PASSWORD: `${API_BASE_URL}/reset-password`,
 
   // Payment endpoints
   CREATE_ORDER: `${API_BASE_URL}/create-order`,

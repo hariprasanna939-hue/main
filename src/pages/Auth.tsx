@@ -235,7 +235,7 @@ const Auth = () => {
   
   const [loading, setLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
-  const [view, setView] = useState<"signin" | "signup">("signin");
+  const [view, setView] = useState<"signin" | "signup" | "forgot">("signin");
   const [signupStep, setSignupStep] = useState<1 | 2>(1);
   const [selectedPlan, setSelectedPlan] = useState<PlanKey>("trial");
 
@@ -371,6 +371,36 @@ const Auth = () => {
     } catch (err) {
       toast({ variant: "destructive", title: "Error", description: err instanceof Error ? err.message : "An error occurred." });
       setPaymentLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      return toast({ variant: "destructive", title: "Required", description: "Email is required." });
+    }
+    setLoading(true);
+    try {
+      const res = await apiRequest(API_ENDPOINTS.FORGOT_PASSWORD, {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      
+      toast({
+        title: "Reset link sent",
+        description: data.message || "If an account exists for this email, a password reset link has been sent.",
+      });
+      setView("signin");
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Request Failed",
+        description: err instanceof Error ? err.message : "Failed to request password reset link.",
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -511,7 +541,7 @@ const Auth = () => {
                           <div>
                             <div className="flex justify-between items-center mb-2">
                               <label className="block text-[13px] font-bold text-[#333] uppercase tracking-wide">Password</label>
-                              <a href="#" className="text-[13px] font-semibold text-[#3b82f6] hover:text-[#2563eb]">Forgot password?</a>
+                              <a href="#" onClick={(e) => { e.preventDefault(); setView("forgot"); }} className="text-[13px] font-semibold text-[#3b82f6] hover:text-[#2563eb]">Forgot password?</a>
                             </div>
                             <div className="relative flex items-center">
                               <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#94a3b8]" />
@@ -521,6 +551,32 @@ const Auth = () => {
                           <button type="submit" disabled={loading} className="w-full h-12 mt-6 bg-[#0f172a] hover:bg-[#1e293b] text-white font-semibold text-[15px] rounded-[10px] transition-colors flex items-center justify-center gap-2 shadow-sm">
                             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
                           </button>
+                        </form>
+                      </div>
+                    ) : view === "forgot" ? (
+                      /* --- FORGOT PASSWORD FORM --- */
+                      <div className="flex flex-col h-full">
+                        <div className="mb-10">
+                          <h1 className="text-[30px] font-bold text-[#0f172a] tracking-tight mb-2">Forgot password</h1>
+                          <p className="text-[15px] text-[#64748b] font-medium">Enter your registered email and we'll send you a secure password reset link.</p>
+                        </div>
+                        <form onSubmit={handleForgotPassword} className="space-y-5">
+                          <div>
+                            <label className="block text-[13px] font-bold text-[#333] mb-2 uppercase tracking-wide">Work Email</label>
+                            <div className="relative flex items-center">
+                              <Mail className="absolute left-3.5 w-[18px] h-[18px] text-[#94a3b8]" />
+                              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-12 pl-10 pr-10 bg-white border border-[#cbd5e1] rounded-[10px] text-[15px] focus:border-[#3b82f6] focus:ring-4 focus:ring-[#3b82f6]/10 outline-none transition-all placeholder:text-[#94a3b8]" placeholder="name@company.com" required />
+                              <div className="absolute right-2"><VoiceButton onTranscript={setEmail} onClear={() => setEmail("")} size="sm" /></div>
+                            </div>
+                          </div>
+                          <button type="submit" disabled={loading} className="w-full h-12 mt-6 bg-[#0f172a] hover:bg-[#1e293b] text-white font-semibold text-[15px] rounded-[10px] transition-colors flex items-center justify-center gap-2 shadow-sm">
+                            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Send Reset Link <ArrowRight className="w-4 h-4" /></>}
+                          </button>
+                          <div className="text-center mt-6">
+                            <button type="button" onClick={() => setView("signin")} className="text-[13px] font-semibold text-[#3b82f6] hover:text-[#2563eb] transition-colors">
+                              Back to Sign In
+                            </button>
+                          </div>
                         </form>
                       </div>
                     ) : (
