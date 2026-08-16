@@ -84,9 +84,9 @@ const ProfileSettings = () => {
     return (displayName || email || "U").charAt(0).toUpperCase();
   }, [displayName, email]);
 
-  const selectedPlanLabel = user?.subscriptionPlan ? planLabelMap[user.subscriptionPlan] : "Pending";
-  const subscriptionAmount = user?.subscriptionAmount ? `₹${user.subscriptionAmount.toLocaleString("en-IN")}` : "Not set";
-  const trialExpiry = getTrialExpiryLabel(user?.trialEndDate);
+  const selectedPlanLabel = user?.role === "admin" ? "Admin (Unlimited)" : (user?.subscriptionPlan ? planLabelMap[user.subscriptionPlan] : "Pending");
+  const subscriptionAmount = user?.role === "admin" ? "Free (Enterprise License)" : (user?.subscriptionAmount ? `₹${user.subscriptionAmount.toLocaleString("en-IN")}` : "Not set");
+  const trialExpiry = user?.role === "admin" ? "Lifetime Admin Access" : getTrialExpiryLabel(user?.trialEndDate);
 
   const handleSave = () => {
     const token = localStorage.getItem("token");

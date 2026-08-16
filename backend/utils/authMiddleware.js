@@ -53,6 +53,11 @@ export const checkSubscription = async (req, res, next) => {
     return res.status(401).json({ message: "User not authenticated." });
   }
 
+  // Admin bypasses subscription restriction check
+  if (req.user.role === "admin") {
+    return next();
+  }
+
   try {
     // Find active subscription
     let subscription = await Subscription.findOne({ 
@@ -118,6 +123,11 @@ export const checkModuleAccess = (moduleName) => {
   return (req, res, next) => {
     // Public paths bypass module check
     if (req.path.startsWith("/public/")) {
+      return next();
+    }
+
+    // Admin has full access to all business modules
+    if (req.user?.role === "admin") {
       return next();
     }
 

@@ -98,6 +98,9 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // dashboard is always accessible to authenticated users
     if (moduleName === "dashboard") return true;
 
+    // Admin has full access to all business modules
+    if (user.role === "admin") return true;
+
     // In-store POS accounts are hard-restricted to Invoice and Inventory only
     if (user.role === "instore") {
       return ["invoice", "inventory"].includes(moduleName);

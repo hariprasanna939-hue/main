@@ -5,7 +5,16 @@ type TrialUser = {
 };
 
 export const isTrialExpired = (user?: TrialUser | null): boolean => {
-  if (!user || user.subscriptionPlan !== "trial") {
+  if (!user) {
+    return false;
+  }
+
+  // Admin is never expired / restricted
+  if ((user as any).role === "admin") {
+    return false;
+  }
+
+  if (user.subscriptionPlan !== "trial") {
     return false;
   }
 

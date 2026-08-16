@@ -324,7 +324,8 @@ const Dashboard = () => {
       })
       .then((data: UserProfile) => {
         setUser(data);
-        if (data.subscriptionStatus !== "active" || isTrialExpired(data)) {
+        const isUserAdmin = data.role === "admin";
+        if (!isUserAdmin && (data.subscriptionStatus !== "active" || isTrialExpired(data))) {
           toast({
             variant: "destructive",
             title: "Free Trial / Subscription Ended",

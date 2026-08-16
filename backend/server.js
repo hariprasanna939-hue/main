@@ -8,6 +8,8 @@ import Razorpay from "razorpay";
 import Plan from "./models/Plan.js";
 import Subscription from "./models/Subscription.js";
 import { authenticateUser, checkSubscription, checkModuleAccess } from "./utils/authMiddleware.js";
+import { sendResetEmail } from "./utils/emailService.js";
+import crypto from "crypto";
 
 const planKeyToName = {
   trial: "Sandbox",
@@ -157,6 +159,8 @@ const userSchema = new mongoose.Schema({
   sellerGSTIN: { type: String },
   sellerState: { type: String },
   sellerAddress: { type: String },
+  resetPasswordToken: { type: String },
+  resetPasswordExpires: { type: Date },
 });
 
 const User = mongoose.model("User", userSchema);
@@ -303,6 +307,94 @@ app.post("/api/signin", async (req, res) => {
   } catch (error) {
     console.error("Signin Error:", error);
     res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// ✅ FORGOT PASSWORD
+app.post("/api/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email is required." });
+    }
+
+    const user = await User.findOne({ email });
+
+    // Enforce generic response for security to avoid account enumeration
+    const genericResponse = {
+      success: true,
+      message: "If an account exists for this email, a password reset link has been sent."
+    };
+
+    if (!user) {
+      return res.json(genericResponse);
+    }
+
+    // Generate cryptographically secure token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    // Hash the token for storage
+    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+    // Save token and expiry (30 minutes)
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = Date.now() + 30 * 60 * 1000;
+    await user.save();
+
+    // Use APP_URL from env or fallback to client localhost port
+    const appUrl = process.env.APP_URL || "http://localhost:5173";
+    const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
+
+    // Send email
+    await sendResetEmail(user.email, resetUrl);
+
+    res.json(genericResponse);
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// ✅ RESET PASSWORD
+app.post("/api/reset-password", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ success: false, message: "Token and password are required." });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ success: false, message: "Password must be at least 8 characters long." });
+    }
+
+    // Hash the incoming raw token to match the database hash
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    // Find user with matching token and valid expiry
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Invalid or expired password reset token." });
+    }
+
+    // Hash new password using bcrypt
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update password and clear token fields
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ success: true, message: "Password reset successful. You can now log in with your new password." });
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
 
