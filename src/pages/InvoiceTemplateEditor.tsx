@@ -117,7 +117,7 @@ const INITIAL_CONFIG = {
   },
   footer: {
     show: true,
-    text: "Thank you for choosing FinSmart. For any queries, write to info@finsmart.com"
+    text: "Powered by SHREE ANDAL AI SOFTWARE SOLUTIONS (OPC) PRIVATE LIMITED ✨."
   },
   design: {
     primaryColor: "#4f46e5",
