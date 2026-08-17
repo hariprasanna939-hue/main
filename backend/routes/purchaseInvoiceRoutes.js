@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
+import { checkPlanLimit } from "../utils/authMiddleware.js";
 
 const router = express.Router();
 
@@ -95,6 +96,10 @@ router.get("/public/:id", async (req, res) => {
 // POST - Create purchase invoice & add items to inventory stock
 router.post("/create", verifyToken, async (req, res) => {
     try {
+        const limitCheck = await checkPlanLimit(req.user.id, req.user.role, "purchase-invoice");
+        if (!limitCheck.allowed) {
+            return res.status(403).json(limitCheck);
+        }
         const invoiceData = req.body;
 
         const newInvoice = new PurchaseInvoice({

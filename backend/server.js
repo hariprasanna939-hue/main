@@ -144,11 +144,12 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   name: { type: String },
   role: { type: String, enum: ["admin", "instore"], default: "admin" },
-  subscriptionStatus: { type: String, enum: ["pending", "active"], default: "pending" },
+  subscriptionStatus: { type: String, enum: ["pending", "active", "expired"], default: "pending" },
   subscriptionPlan: { type: String, enum: ["trial", "monthly", "annual", "lifetime"], default: "monthly" },
   subscriptionAmount: { type: Number },
   subscriptionStartDate: { type: Date },
   subscriptionEndDate: { type: Date },
+  pendingDowngradePlan: { type: String, enum: ["trial", "monthly", "annual", "lifetime"] },
   trialEndDate: { type: Date },
   razorpayPaymentId: { type: String },
   razorpayOrderId: { type: String },
@@ -177,8 +178,10 @@ app.post("/api/signup", async (req, res) => {
     if (existingUser)
       return res.status(400).json({ message: "User already exists" });
 
+    const allowedRoles = ["admin", "instore"];
+    const userRole = allowedRoles.includes(req.body.role) ? req.body.role : "admin";
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ email, password: hashedPassword, role });
+    const newUser = new User({ email, password: hashedPassword, role: userRole });
     await newUser.save();
 
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
@@ -209,8 +212,10 @@ app.post("/api/signup-trial", async (req, res) => {
 
     const subscriptionStartDate = new Date();
     const trialEndDate = new Date(subscriptionStartDate);
-    trialEndDate.setDate(trialEndDate.getDate() + 30);
+    trialEndDate.setDate(trialEndDate.getDate() + 14);
 
+    const allowedRoles = ["admin", "instore"];
+    const userRole = allowedRoles.includes(role) ? role : "admin";
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
       email,
@@ -222,7 +227,7 @@ app.post("/api/signup-trial", async (req, res) => {
       subscriptionStartDate,
       subscriptionEndDate: trialEndDate,
       trialEndDate,
-      role
+      role: userRole
     });
 
     await newUser.save();
@@ -425,7 +430,7 @@ app.get("/api/user", verifyToken, async (req, res) => {
       email: user.email,
       name: user.name,
       id: user._id,
-      role: user.role,
+      role: user.role || "admin",
       subscriptionStatus: user.subscriptionStatus,
       subscriptionPlan: user.subscriptionPlan,
       subscriptionAmount: user.subscriptionAmount,
@@ -682,16 +687,85 @@ app.post("/api/verify-payment", async (req, res) => {
       subscriptionEndDate = new Date(subscriptionStartDate);
       subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
     }
-    // Lifetime plan has no end date (null)
 
-    if (process.env.DEV_MODE === "true" || razorpay_order_id?.startsWith("dev_order_")) {
-      console.log("🔧 Development mode: Bypassing payment verification");
+    // Dev Mode Check
+    const isDevOrder = process.env.DEV_MODE === "true" || razorpay_order_id?.startsWith("dev_order_");
+    const paymentIdToCheck = razorpay_payment_id || (isDevOrder ? `dev_payment_${Date.now()}` : undefined);
+    const orderIdToCheck = razorpay_order_id || `dev_order_${Date.now()}`;
 
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ message: "User already exists" });
+    // Duplicate/Replay check
+    if (paymentIdToCheck) {
+      const duplicateCheck = await Subscription.findOne({ razorpayPaymentId: paymentIdToCheck });
+      if (duplicateCheck) {
+        return res.status(400).json({ message: "This payment has already been processed." });
+      }
+    }
+    if (orderIdToCheck) {
+      const duplicateOrder = await Subscription.findOne({ razorpayOrderId: orderIdToCheck });
+      if (duplicateOrder) {
+        return res.status(400).json({ message: "This order has already been processed." });
+      }
+    }
+
+    // Check payment signature & amount mismatch
+    if (!isDevOrder) {
+      if (!razorpay_payment_id || !razorpay_order_id) {
+        return res.status(400).json({ message: "Payment details are required" });
       }
 
+      const crypto = await import('crypto');
+      const expectedSignature = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest('hex');
+
+      if (expectedSignature !== razorpay_signature) {
+        return res.status(400).json({ message: "Invalid payment signature" });
+      }
+
+      try {
+        const razorpayOrder = await razorpay.orders.fetch(razorpay_order_id);
+        const expectedAmountInPaise = selectedPlan.totalAmount * 100;
+        if (razorpayOrder.amount !== expectedAmountInPaise) {
+          return res.status(400).json({ message: "Payment amount mismatch. Verification failed." });
+        }
+      } catch (err) {
+        console.error("Razorpay order fetch failed:", err);
+        return res.status(400).json({ message: "Failed to verify order details with payment gateway." });
+      }
+    }
+
+    const existingUser = await User.findOne({ email });
+    let userToUse;
+
+    if (existingUser) {
+      // Authenticate password
+      const isPasswordCorrect = await bcrypt.compare(password, existingUser.password);
+      if (!isPasswordCorrect) {
+        return res.status(400).json({ message: "An account with this email already exists. Please check your password to renew or upgrade your plan." });
+      }
+
+      // Update existing user properties
+      existingUser.subscriptionStatus = "active";
+      existingUser.subscriptionPlan = plan;
+      existingUser.subscriptionAmount = selectedPlan.totalAmount;
+      existingUser.subscriptionStartDate = subscriptionStartDate;
+      existingUser.subscriptionEndDate = subscriptionEndDate;
+      existingUser.razorpayPaymentId = paymentIdToCheck;
+      existingUser.razorpayOrderId = orderIdToCheck;
+      existingUser.pendingDowngradePlan = undefined;
+      
+      await existingUser.save();
+      userToUse = existingUser;
+
+      // Mark older active subscriptions as expired
+      await Subscription.updateMany(
+        { userId: existingUser._id, status: "active" },
+        { status: "expired" }
+      );
+    } else {
+      // Create new user
+      const allowedRoles = ["admin", "instore"];
+      const userRole = allowedRoles.includes(role) ? role : "admin";
       const hashedPassword = await bcrypt.hash(password, 10);
       const newUser = new User({
         email,
@@ -702,97 +776,40 @@ app.post("/api/verify-payment", async (req, res) => {
         subscriptionAmount: selectedPlan.totalAmount,
         subscriptionStartDate: subscriptionStartDate,
         subscriptionEndDate: subscriptionEndDate,
-        razorpayPaymentId: "dev_payment_" + Date.now(),
-        razorpayOrderId: razorpay_order_id || "dev_order_" + Date.now(),
-        role
+        razorpayPaymentId: paymentIdToCheck,
+        razorpayOrderId: orderIdToCheck,
+        role: userRole
       });
 
       await newUser.save();
-
-      // Create Subscription record in database
-      const planName = planKeyToName[plan] || "Express";
-      const planDoc = await Plan.findOne({ name: planName });
-      if (planDoc) {
-        const subscription = new Subscription({
-          userId: newUser._id,
-          planId: planDoc._id,
-          status: "active",
-          startDate: subscriptionStartDate,
-          endDate: subscriptionEndDate
-        });
-        await subscription.save();
-      }
-
-      const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-      return res.status(201).json({
-        message: "Development mode: User registered successfully",
-        token,
-        subscriptionStatus: "active",
-        subscriptionPlan: plan,
-        subscriptionEndDate: subscriptionEndDate,
-        role: newUser.role
-      });
+      userToUse = newUser;
     }
 
-    if (!razorpay_payment_id || !razorpay_order_id) {
-      return res.status(400).json({ message: "Payment details are required" });
-    }
-
-    const crypto = await import('crypto');
-    const expectedSignature = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-
-    if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({ message: "Invalid payment signature" });
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({
-      email,
-      name: name || email.split('@')[0],
-      password: hashedPassword,
-      subscriptionStatus: "active",
-      subscriptionPlan: plan,
-      subscriptionAmount: selectedPlan.totalAmount,
-      subscriptionStartDate: subscriptionStartDate,
-      subscriptionEndDate: subscriptionEndDate,
-      razorpayPaymentId: razorpay_payment_id,
-      razorpayOrderId: razorpay_order_id,
-      role
-    });
-
-    await newUser.save();
-
-    // Create Subscription record in database
+    // Save Subscription document in database
     const planName = planKeyToName[plan] || "Express";
     const planDoc = await Plan.findOne({ name: planName });
     if (planDoc) {
       const subscription = new Subscription({
-        userId: newUser._id,
+        userId: userToUse._id,
         planId: planDoc._id,
         status: "active",
         startDate: subscriptionStartDate,
-        endDate: subscriptionEndDate
+        endDate: subscriptionEndDate,
+        razorpayPaymentId: paymentIdToCheck,
+        razorpayOrderId: orderIdToCheck
       });
       await subscription.save();
     }
 
-    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ id: userToUse._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.status(201).json({
-      message: "Payment verified and user registered successfully",
+      message: existingUser ? "Subscription upgraded/renewed successfully" : "Payment verified and user registered successfully",
       token,
       subscriptionStatus: "active",
       subscriptionPlan: plan,
       subscriptionEndDate: subscriptionEndDate,
-      role: newUser.role
+      role: userToUse.role
     });
   } catch (error) {
     console.error("Verify Payment Error:", error);
@@ -828,12 +845,28 @@ app.post("/api/upgrade-subscription", authenticateUser, async (req, res) => {
       subscriptionEndDate = new Date(subscriptionStartDate);
       subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
     }
-    // Lifetime plan has no end date (null)
 
-    // Verify payment
-    if (process.env.DEV_MODE === "true" || razorpay_order_id?.startsWith("dev_order_")) {
-      console.log("🔧 Development mode: Bypassing payment verification for upgrade");
-    } else {
+    // Dev Mode Check
+    // Dev Mode Check
+    const isDevOrder = process.env.DEV_MODE === "true" || razorpay_order_id?.startsWith("dev_order_");
+    const paymentIdToCheck = razorpay_payment_id || (isDevOrder ? `dev_payment_${Date.now()}` : undefined);
+    const orderIdToCheck = razorpay_order_id || `dev_order_${Date.now()}`;
+    // Duplicate/Replay check
+    if (paymentIdToCheck) {
+      const duplicateCheck = await Subscription.findOne({ razorpayPaymentId: paymentIdToCheck });
+      if (duplicateCheck) {
+        return res.status(400).json({ message: "This payment has already been processed." });
+      }
+    }
+    if (orderIdToCheck) {
+      const duplicateOrder = await Subscription.findOne({ razorpayOrderId: orderIdToCheck });
+      if (duplicateOrder) {
+        return res.status(400).json({ message: "This order has already been processed." });
+      }
+    }
+
+    // Verify payment & amount mismatch
+    if (!isDevOrder) {
       if (!razorpay_payment_id || !razorpay_order_id) {
         return res.status(400).json({ message: "Payment details are required" });
       }
@@ -845,6 +878,17 @@ app.post("/api/upgrade-subscription", authenticateUser, async (req, res) => {
 
       if (expectedSignature !== razorpay_signature) {
         return res.status(400).json({ message: "Invalid payment signature" });
+      }
+
+      try {
+        const razorpayOrder = await razorpay.orders.fetch(razorpay_order_id);
+        const expectedAmountInPaise = selectedPlan.totalAmount * 100;
+        if (razorpayOrder.amount !== expectedAmountInPaise) {
+          return res.status(400).json({ message: "Payment amount mismatch. Verification failed." });
+        }
+      } catch (err) {
+        console.error("Razorpay order fetch failed:", err);
+        return res.status(400).json({ message: "Failed to verify order details with payment gateway." });
       }
     }
 
@@ -860,13 +904,16 @@ app.post("/api/upgrade-subscription", authenticateUser, async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       {
-        subscriptionStatus: "active",
-        subscriptionPlan: plan,
-        subscriptionAmount: selectedPlan.totalAmount,
-        subscriptionStartDate: subscriptionStartDate,
-        subscriptionEndDate: subscriptionEndDate,
-        razorpayPaymentId: razorpay_payment_id || "dev_payment_" + Date.now(),
-        razorpayOrderId: razorpay_order_id || "dev_order_" + Date.now()
+        $set: {
+          subscriptionStatus: "active",
+          subscriptionPlan: plan,
+          subscriptionAmount: selectedPlan.totalAmount,
+          subscriptionStartDate: subscriptionStartDate,
+          subscriptionEndDate: subscriptionEndDate,
+          razorpayPaymentId: paymentIdToCheck,
+          razorpayOrderId: orderIdToCheck
+        },
+        $unset: { pendingDowngradePlan: 1 }
       },
       { new: true }
     ).select("-password");
@@ -883,7 +930,9 @@ app.post("/api/upgrade-subscription", authenticateUser, async (req, res) => {
       planId: planDoc._id,
       status: "active",
       startDate: subscriptionStartDate,
-      endDate: subscriptionEndDate
+      endDate: subscriptionEndDate,
+      razorpayPaymentId: paymentIdToCheck,
+      razorpayOrderId: orderIdToCheck
     });
     await newSubscription.save();
 
@@ -909,7 +958,196 @@ app.post("/api/upgrade-subscription", authenticateUser, async (req, res) => {
   }
 });
 
+// ✅ SCHEDULE DOWNGRADE SUBSCRIPTION
+app.post("/api/downgrade-subscription", authenticateUser, async (req, res) => {
+  try {
+    const { plan } = req.body;
+    if (!subscriptionPlans[plan]) {
+      return res.status(400).json({ message: "Invalid subscription plan" });
+    }
+
+    const User = mongoose.model("User");
+    const user = await User.findById(req.user._id);
+
+    // Validate that the requested plan is actually lower
+    const planOrder = { trial: 0, monthly: 1, annual: 2, lifetime: 3 };
+    const currentRank = planOrder[user.subscriptionPlan] || 0;
+    const targetRank = planOrder[plan] || 0;
+    
+    if (targetRank >= currentRank) {
+      return res.status(400).json({ message: "Downgrade requested to a higher or equal plan." });
+    }
+
+    // Find database Plan
+    const planName = planKeyToName[plan] || "Express";
+    const planDoc = await Plan.findOne({ name: planName });
+    if (!planDoc) {
+      return res.status(500).json({ message: "Subscription plan not found in database configuration." });
+    }
+
+    // Update user pending downgrade flag
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { pendingDowngradePlan: plan } },
+      { new: true }
+    ).select("-password");
+
+    // Update active subscription with pending downgrade Plan ID
+    await Subscription.updateMany(
+      { userId: req.user._id, status: "active" },
+      { pendingDowngradePlanId: planDoc._id }
+    );
+
+    res.json({
+      message: "Downgrade scheduled successfully.",
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error("Downgrade Subscription Error:", error);
+    res.status(500).json({ message: "Scheduling downgrade failed." });
+  }
+});
+
+// ✅ CANCEL SCHEDULED DOWNGRADE
+app.post("/api/cancel-downgrade", authenticateUser, async (req, res) => {
+  try {
+    const User = mongoose.model("User");
+    
+    // Clear user pending downgrade flag
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $unset: { pendingDowngradePlan: 1 } },
+      { new: true }
+    ).select("-password");
+
+    // Clear active subscription pending downgrade Plan ID
+    await Subscription.updateMany(
+      { userId: req.user._id, status: "active" },
+      { $unset: { pendingDowngradePlanId: 1 } }
+    );
+
+    res.json({
+      message: "Downgrade cancelled successfully.",
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error("Cancel Downgrade Error:", error);
+    res.status(500).json({ message: "Failed to cancel downgrade." });
+  }
+});
+
 // ✅ Use Routes
+// ✅ RAZORPAY WEBHOOK HANDLER
+app.post("/api/webhooks/razorpay", async (req, res) => {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET || "razorpay_webhook_secret_default_123";
+  const signature = req.headers["x-razorpay-signature"];
+
+  if (!signature) {
+    return res.status(400).json({ message: "Missing Razorpay webhook signature." });
+  }
+
+  try {
+    const crypto = await import('crypto');
+    const expectedSignature = crypto.createHmac('sha256', secret)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+
+    // For testing/fallback in local env where stringifying req.body might differ slightly, we check both signature validation and dev mode
+    if (expectedSignature !== signature && process.env.DEV_MODE !== "true") {
+      return res.status(400).json({ message: "Invalid webhook signature." });
+    }
+
+    const { event, payload } = req.body;
+    console.log(`📡 Received Razorpay Webhook Event: ${event}`);
+
+    // We handle order.paid and payment.captured
+    if (event === "order.paid" || event === "payment.captured") {
+      const paymentEntity = payload.payment?.entity || {};
+      const orderEntity = payload.order?.entity || {};
+      
+      const email = paymentEntity.email || paymentEntity.notes?.email || orderEntity.notes?.email;
+      const plan = paymentEntity.notes?.plan || orderEntity.notes?.plan || "monthly";
+      const paymentId = paymentEntity.id;
+      const orderId = paymentEntity.order_id || orderEntity.id;
+
+      if (!email) {
+        console.log("⚠️ Webhook event lacks email information. Skipping.");
+        return res.json({ status: "skipped", reason: "no_email" });
+      }
+
+      // Check payment replay
+      if (paymentId) {
+        const duplicateCheck = await Subscription.findOne({ razorpayPaymentId: paymentId });
+        if (duplicateCheck) {
+          console.log(`ℹ️ Webhook duplicate check triggered: payment ${paymentId} already processed.`);
+          return res.json({ status: "ignored_duplicate" });
+        }
+      }
+
+      const selectedPlan = subscriptionPlans[plan];
+      if (!selectedPlan) {
+        console.log(`⚠️ Invalid plan key: ${plan}. Skipping.`);
+        return res.json({ status: "skipped", reason: "invalid_plan" });
+      }
+
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        const subscriptionStartDate = new Date();
+        let subscriptionEndDate = null;
+
+        if (plan === "monthly") {
+          subscriptionEndDate = new Date(subscriptionStartDate);
+          subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
+        } else if (plan === "annual") {
+          subscriptionEndDate = new Date(subscriptionStartDate);
+          subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
+        }
+
+        // Update existing user properties
+        existingUser.subscriptionStatus = "active";
+        existingUser.subscriptionPlan = plan;
+        existingUser.subscriptionAmount = selectedPlan.totalAmount;
+        existingUser.subscriptionStartDate = subscriptionStartDate;
+        existingUser.subscriptionEndDate = subscriptionEndDate;
+        if (paymentId) existingUser.razorpayPaymentId = paymentId;
+        if (orderId) existingUser.razorpayOrderId = orderId;
+        
+        await existingUser.save();
+
+        // Mark older active subscriptions as expired
+        await Subscription.updateMany(
+          { userId: existingUser._id, status: "active" },
+          { status: "expired" }
+        );
+
+        // Save Subscription document in database
+        const planName = planKeyToName[plan] || "Express";
+        const planDoc = await Plan.findOne({ name: planName });
+        if (planDoc) {
+          const subscription = new Subscription({
+            userId: existingUser._id,
+            planId: planDoc._id,
+            status: "active",
+            startDate: subscriptionStartDate,
+            endDate: subscriptionEndDate,
+            razorpayPaymentId: paymentId,
+            razorpayOrderId: orderId
+          });
+          await subscription.save();
+        }
+        console.log(`🟢 Successfully processed webhook subscription update for ${email}`);
+      } else {
+        console.log(`⚠️ User not found for email: ${email}. Webhook cannot auto-create account without password credentials.`);
+      }
+    }
+
+    res.json({ status: "ok" });
+  } catch (error) {
+    console.error("Webhook processing failed:", error);
+    res.status(500).json({ message: "Webhook execution failed" });
+  }
+});
+
 app.use("/api/payroll", authenticateUser, checkSubscription, checkModuleAccess("payroll"), payrollRoutes);
 app.use("/api/tax", authenticateUser, checkSubscription, checkModuleAccess("tax-gst"), taxRoutes);
 app.use("/api/balance", authenticateUser, checkSubscription, checkModuleAccess("balance-sheet"), balanceSheetRoutes);
@@ -933,17 +1171,61 @@ app.use("/api/invoice-templates", authenticateUser, checkSubscription, checkModu
 
 const seedPlans = async () => {
   const plans = [
-    { name: "Sandbox", allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping"] },
-    { name: "Express", allowedModules: ["dashboard", "invoice", "inventory"] },
-    { name: "Professional", allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios"] },
-    { name: "Enterprise", allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering"] }
+    { 
+      name: "Sandbox", 
+      allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering", "export"],
+      invoiceLimit: 50,
+      transactionLimit: 100,
+      seatLimit: 1,
+      aiLimit: 10,
+      ocrLimit: 10,
+      exportPermissions: true
+    },
+    { 
+      name: "Express", 
+      allowedModules: ["dashboard", "invoice", "inventory", "export"],
+      invoiceLimit: 5000,
+      transactionLimit: 10000,
+      seatLimit: 1,
+      aiLimit: 100,
+      ocrLimit: 100,
+      exportPermissions: true
+    },
+    { 
+      name: "Professional", 
+      allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "export"],
+      invoiceLimit: 25000,
+      transactionLimit: 50000,
+      seatLimit: 5,
+      aiLimit: 1000,
+      ocrLimit: 1000,
+      exportPermissions: true
+    },
+    { 
+      name: "Enterprise", 
+      allowedModules: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering", "export"],
+      invoiceLimit: 100000,
+      transactionLimit: 1000000,
+      seatLimit: 999999,
+      aiLimit: 999999,
+      ocrLimit: 999999,
+      exportPermissions: true
+    }
   ];
 
   try {
     for (const p of plans) {
       await Plan.findOneAndUpdate(
         { name: p.name },
-        { allowedModules: p.allowedModules },
+        { 
+          allowedModules: p.allowedModules,
+          invoiceLimit: p.invoiceLimit,
+          transactionLimit: p.transactionLimit,
+          seatLimit: p.seatLimit,
+          aiLimit: p.aiLimit,
+          ocrLimit: p.ocrLimit,
+          exportPermissions: p.exportPermissions
+        },
         { upsert: true, new: true }
       );
     }

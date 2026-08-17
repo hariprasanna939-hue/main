@@ -10,7 +10,7 @@ import { ArrowLeft, Calculator, Download, TrendingUp, AlertCircle, CheckCircle, 
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { DEFAULT_REPORT_COMPANY_NAME, REPORT_FOOTER_COMPANY, getReportCompanyName } from "@/lib/reportBranding";
+import { DEFAULT_REPORT_COMPANY_NAME, REPORT_FOOTER_COMPANY, getReportCompanyName, formatPDFCurrency } from "@/lib/reportBranding";
 
 const BalanceSheet = () => {
   const navigate = useNavigate();
@@ -184,11 +184,30 @@ const BalanceSheet = () => {
   };
 
   const downloadReport = () => {
-    if (!balanceSheet) return;
-
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
+
+    if (!balanceSheet) {
+      doc.setFillColor(26, 54, 164);
+      doc.rect(0, 0, pageWidth, 38, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(getReportCompanyName(formData.companyName), pageWidth / 2, 14, { align: "center" });
+      doc.setFontSize(18);
+      doc.text("BALANCE SHEET REPORT", pageWidth / 2, 26, { align: "center" });
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.setTextColor(100, 116, 139);
+      doc.text("No balance sheet data available for the selected period.", pageWidth / 2, 60, { align: "center" });
+
+      doc.setFontSize(7.5);
+      doc.text(`Powered by ${REPORT_FOOTER_COMPANY}`, pageWidth / 2, pageHeight - 12, { align: "center" });
+      doc.save(`Balance_Sheet_${Date.now()}.pdf`);
+      return;
+    }
 
     // 1. Blue Header Banner
     doc.setFillColor(26, 54, 164);
@@ -217,7 +236,7 @@ const BalanceSheet = () => {
     doc.text(formattedDate, pageWidth / 2, 48, { align: "center" });
 
     // Format Currency Helper
-    const formatCurrency = (val) => `Rs. ${(parseFloat(val) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formatCurrency = (val: any) => formatPDFCurrency(val, "Rs. ");
 
     const startX = 15;
     const contentWidth = pageWidth - 30; // 180mm

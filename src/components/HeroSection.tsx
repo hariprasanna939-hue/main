@@ -59,7 +59,7 @@ const HeroSection = ({ onWatchDemo }: HeroSectionProps) => {
       return;
     }
 
-    toast.success("Your 30-day free trial request has been submitted successfully!");
+    toast.success("Your 14-day free trial request has been submitted successfully!");
     setIsDialogOpen(false);
     setFormData({
       name: "",
@@ -127,7 +127,7 @@ const HeroSection = ({ onWatchDemo }: HeroSectionProps) => {
             className="group relative h-12 overflow-hidden rounded-full bg-slate-950 px-6 text-sm font-semibold text-white shadow-[0_18px_42px_rgba(15,23,42,0.26)] transition-all duration-300 hover:-translate-y-1 hover:bg-slate-800 hover:shadow-[0_24px_54px_rgba(15,23,42,0.36)]"
           >
             <span className="relative z-10 flex items-center">
-              Get your 30 days free trial
+              Get your 14 days free trial
               <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
             </span>
             <div className="absolute inset-0 z-0 bg-gradient-to-r from-sky-600/20 to-indigo-600/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
@@ -272,7 +272,7 @@ const HeroSection = ({ onWatchDemo }: HeroSectionProps) => {
         <DialogContent className="sm:max-w-[425px] rounded-3xl bg-white/95 backdrop-blur-xl border-slate-200/50 shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
-              Start Your 30-Day Free Trial
+              Start Your 14-Day Free Trial
             </DialogTitle>
             <DialogDescription className="text-slate-600 font-medium mt-1">
               Fill out the details below, and our team will get you set up with your free trial account immediately.

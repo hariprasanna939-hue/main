@@ -33,6 +33,9 @@ import {
   Lock,
   Check
 } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { REPORT_FOOTER_COMPANY, getReportCompanyName, formatPDFCurrency, formatPDFRatio } from "@/lib/reportBranding";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -401,8 +404,8 @@ const Dashboard = () => {
         if (gstData) setGstAnalyticsData(gstData);
         if (liveBS) setLiveBalanceSheetData(liveBS);
         if (liveRatios) setLiveFinancialRatiosData(liveRatios);
-        const cashFlowStatementData = Array.isArray(statements) ? statements : [];
-        const bookkeepingEntries = Array.isArray(bookkeeping?.entries) ? bookkeeping.entries : [];
+        const cashFlowStatementData = Array.isArray(statements) ? statements.filter((s: any) => !s.isDeleted) : [];
+        const bookkeepingEntries = Array.isArray(bookkeeping?.entries) ? bookkeeping.entries.filter((e: any) => !e.isDeleted) : [];
         
         const now = new Date();
         const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -421,17 +424,17 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, [selectedPeriod]);
+  }, [selectedPeriod, location.pathname]);
 
   // Update calculations whenever period or raw data changes
   useEffect(() => {
-    const filteredInvoices = allInvoices.filter(inv => isDateInPeriod(inv.invoiceDate, selectedPeriod));
-    const filteredPurchases = allPurchaseInvoices.filter(inv => isDateInPeriod(inv.createdAt || inv.billDate, selectedPeriod));
+    const filteredInvoices = allInvoices.filter(inv => !inv.isDeleted && inv.status !== 'cancelled' && isDateInPeriod(inv.invoiceDate, selectedPeriod));
+    const filteredPurchases = allPurchaseInvoices.filter(inv => !inv.isDeleted && isDateInPeriod(inv.createdAt || inv.billDate, selectedPeriod));
 
     const revenue = filteredInvoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
     const purchaseExpenses = filteredPurchases.reduce((sum, inv) => sum + (inv.total || 0), 0);
 
-    const selectedPeriodBookkeeping = allBookkeepingEntries.filter(entry => isDateInPeriod(entry.date, selectedPeriod));
+    const selectedPeriodBookkeeping = allBookkeepingEntries.filter(entry => !entry.isDeleted && isDateInPeriod(entry.date, selectedPeriod));
     const bkIncome = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "income" ? sum + toNumber(entry.amount) : sum, 0);
     const bkExpense = selectedPeriodBookkeeping.reduce((sum, entry) => entry.type === "expense" ? sum + toNumber(entry.amount) : sum, 0);
 
@@ -483,7 +486,8 @@ const Dashboard = () => {
         company: inv.customerName || "Unknown Client",
         amount: `₹${inv.grandTotal ? inv.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "0.00"}`,
         status: statusStr.charAt(0).toUpperCase() + statusStr.slice(1),
-        statusColor
+        statusColor,
+        rawDate: inv.invoiceDate || inv.createdAt
       };
     });
     setInvoicesList(mappedInvoices);
@@ -626,14 +630,27 @@ const Dashboard = () => {
   const profileInitial = profileName.charAt(0).toUpperCase();
   
   const filteredModules = useMemo(() => {
-    if (user?.role === "instore") {
-      return dashboardModules.filter(m => 
+    let modules = dashboardModules;
+    if (user?.role === "instore" && user?.subscriptionPlan !== "trial") {
+      modules = modules.filter(m => 
         m.path === "/" || 
         m.path === "/invoice" || 
         m.path === "/inventory"
       );
     }
-    return dashboardModules;
+    // Only users with backend role 'admin' see the 6 Analytics modules in Dashboard All Products / Module Listings
+    if (user?.role !== "admin") {
+      const analyticsPaths = [
+        "/tax-gst",
+        "/balance-sheet",
+        "/profit-loss",
+        "/cashflow",
+        "/cashflow-statement",
+        "/financial-ratios"
+      ];
+      modules = modules.filter(m => !analyticsPaths.includes(m.path));
+    }
+    return modules;
   }, [user]);
   
   // Safely Extract Cash Flow Statement Values
@@ -683,81 +700,205 @@ const Dashboard = () => {
   };
 
   const handleDownload = (reportType: string) => {
-    let filename = `${reportType.toLowerCase().replace(/\s+/g, "_")}_report.txt`;
-    let content = "";
-    
-    const nowStr = new Date().toLocaleString();
-    content += `=========================================\n`;
-    content += `  SHREE ANDAL AI - FINANCIAL REPORT      \n`;
-    content += `  Report: ${reportType}                  \n`;
-    content += `  Generated: ${nowStr}                   \n`;
-    content += `  Period: ${selectedPeriod}              \n`;
-    content += `=========================================\n\n`;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const periodLabel = selectedPeriod ? selectedPeriod.toUpperCase().replace("-", " ") : "THIS MONTH";
+
+    // Header Banner
+    doc.setFillColor(15, 23, 42); // dark slate / indigo
+    doc.rect(0, 0, 210, 28, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.text(`${reportType.toUpperCase()} REPORT`, 14, 12);
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Period: ${periodLabel} | Generated: ${new Date().toLocaleDateString("en-IN")}`, 14, 20);
 
     if (reportType === "Cash Flow Prediction") {
-      content += `Month\t\tActual Inflow\tActual Outflow\n`;
-      cashFlowStatements.forEach(stmt => {
-        const inflow = Number(stmt?.totalInflow || stmt?.inflow || 0);
-        const outflow = Number(stmt?.totalOutflow || stmt?.outflow || 0);
-        content += `${stmt.period || "Period"}\t₹${inflow.toLocaleString()}\t₹${outflow.toLocaleString()}\n`;
-      });
-      content += `\n* Forecast for Next Month (Est):\n`;
-      content += `Inflow Estimate: +70% of Maximum Value\n`;
-      content += `Outflow Estimate: +40% of Maximum Value\n`;
+      const hasData = Array.isArray(cashFlowStatements) && cashFlowStatements.length > 0;
+      if (!hasData) {
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(11);
+        doc.text("No historical cash flow data available to perform linear regression prediction for the selected period.", 14, 45);
+      } else {
+        autoTable(doc, {
+          startY: 34,
+          head: [["Historical Period / Month", "Actual Cash Inflow (INR)", "Actual Cash Outflow (INR)", "Net Cash Flow (INR)"]],
+          body: cashFlowStatements.map(stmt => {
+            const inflow = Number(stmt?.totalInflow || stmt?.inflow || 0);
+            const outflow = Number(stmt?.totalOutflow || stmt?.outflow || 0);
+            return [
+              stmt?.month || stmt?.period || "Month",
+              formatPDFCurrency(inflow),
+              formatPDFCurrency(outflow),
+              formatPDFCurrency(inflow - outflow)
+            ];
+          }),
+          theme: "striped",
+          headStyles: { fillColor: [30, 41, 59] },
+          styles: { fontSize: 9, cellPadding: 2.5 },
+        });
+
+        const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : 90;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text("LINEAR REGRESSION FORECAST (PREDICTION)", 14, finalY);
+
+        autoTable(doc, {
+          startY: finalY + 4,
+          head: [["Forecast Period", "Predicted Inflow (INR)", "Predicted Outflow (INR)", "Predicted Net Flow (INR)", "Methodology"]],
+          body: [
+            ["Next Month (Forecast)", formatPDFCurrency((cfGen?.cashFlow?.inflow || 0) * 1.05), formatPDFCurrency((cfGen?.cashFlow?.outflow || 0) * 1.02), formatPDFCurrency((cfGen?.cashFlow?.inflow || 0) * 1.05 - (cfGen?.cashFlow?.outflow || 0) * 1.02), "Linear Trend over Historical Data"],
+            ["Next 3 Months (Forecast)", formatPDFCurrency((cfGen?.cashFlow?.inflow || 0) * 3.15), formatPDFCurrency((cfGen?.cashFlow?.outflow || 0) * 3.06), formatPDFCurrency((cfGen?.cashFlow?.inflow || 0) * 3.15 - (cfGen?.cashFlow?.outflow || 0) * 3.06), "Linear Regression Forecast"],
+          ],
+          theme: "grid",
+          headStyles: { fillColor: [0, 106, 255] },
+          styles: { fontSize: 9, cellPadding: 2.5 },
+        });
+      }
     } else if (reportType === "Profit and Loss") {
-      content += `Total Income: ₹${plSummaryData.totalRevenue.toLocaleString("en-IN")}\n`;
-      content += `Total Expenses: ₹${plSummaryData.totalExpenses.toLocaleString("en-IN")}\n`;
-      content += `Gross Margin: ${plSummaryData.grossProfitMargin.toFixed(2)}%\n`;
-      content += `Net Margin: ${plSummaryData.netProfitMargin.toFixed(2)}%\n`;
-      content += `-----------------------------------------\n`;
-      content += `Net Profit: ₹${plSummaryData.netProfit.toLocaleString("en-IN")}\n`;
+      autoTable(doc, {
+        startY: 34,
+        head: [["Financial Category", "Centralized Calculated Value (INR)"]],
+        body: [
+          ["Total Revenue / Income", formatPDFCurrency(plSummaryData.totalRevenue || 0)],
+          ["Sales Invoices Subtotal", formatPDFCurrency(plSummaryData.sales || 0)],
+          ["Bookkeeping & Inventory Sales", formatPDFCurrency((plSummaryData.bookkeepingIncome || 0) + (plSummaryData.inventorySales || 0))],
+          ["Cost of Goods Sold (COGS)", formatPDFCurrency(plSummaryData.costOfMaterials || 0)],
+          ["Operating Expenses (Salaries, Rent, Utilities)", formatPDFCurrency((plSummaryData.salaries || 0) + (plSummaryData.rent || 0) + (plSummaryData.utilities || 0))],
+          ["Total Expenses", formatPDFCurrency(plSummaryData.totalExpenses || 0)],
+          ["Net Profit Margin (%)", formatPDFRatio(plSummaryData.netProfitMargin, "%")],
+          ["Net Operating Profit", formatPDFCurrency(plSummaryData.netProfit || 0)],
+        ],
+        theme: "striped",
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9, cellPadding: 3 },
+      });
     } else if (reportType === "Recent Invoices") {
-      content += `Invoice ID\tCompany\tAmount\tStatus\n`;
-      invoicesList.forEach(inv => {
-        content += `${inv.id}\t${inv.company}\t${inv.amount}\t${inv.status}\n`;
-      });
+      const hasInvoices = Array.isArray(invoicesList) && invoicesList.length > 0;
+      if (!hasInvoices) {
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(11);
+        doc.text("No recent invoices recorded for the selected period.", 14, 45);
+      } else {
+        autoTable(doc, {
+          startY: 34,
+          head: [["Invoice Number / ID", "Customer / Company", "Amount (INR)", "Status"]],
+          body: invoicesList.map((inv: any) => [
+            inv.id || inv.invoiceNumber || "INV-N/A",
+            inv.company || inv.customerName || "Customer",
+            formatPDFCurrency(inv.amount || 0),
+            (inv.status || "paid").toUpperCase(),
+          ]),
+          theme: "striped",
+          headStyles: { fillColor: [30, 41, 59] },
+          styles: { fontSize: 9, cellPadding: 2.5 },
+        });
+      }
     } else if (reportType === "Cash Flow Statement") {
-      const cfsInflow = Number(cfGen?.cashFlow?.inflow || 0);
-      const cfsOutflow = Number(cfGen?.cashFlow?.outflow || 0);
-      const cfsNetFlow = Number(cfGen?.cashFlow?.net || 0);
-      content += `Operating Activities: +₹${(cfsInflow * 0.8).toLocaleString()}\n`;
-      content += `Investing Activities: -₹${(cfsOutflow * 0.3).toLocaleString()}\n`;
-      content += `Financing Activities: +₹${(cfsInflow * 0.2).toLocaleString()}\n`;
-      content += `-----------------------------------------\n`;
-      content += `Net Cash Flow: ₹${cfsNetFlow.toLocaleString()}\n`;
-    } else if (reportType === "Financial Ratios") {
-      financialRatios.forEach(ratio => {
-        content += `${ratio.label}: ${ratio.value} (${ratio.status})\n`;
+      const inflow = Number(cfGen?.cashFlow?.inflow || 0);
+      const outflow = Number(cfGen?.cashFlow?.outflow || 0);
+      const net = Number(cfGen?.cashFlow?.net || 0);
+      const receivables = Number(cfGen?.cashFlow?.receivables || 0);
+      const payables = Number(cfGen?.cashFlow?.payables || 0);
+
+      autoTable(doc, {
+        startY: 34,
+        head: [["Cash Flow Activity / Metric", "Amount (INR)"]],
+        body: [
+          ["Operating Cash Inflows (Collected Sales)", formatPDFCurrency(inflow)],
+          ["Operating Cash Outflows (Purchases, Expenses, Payroll)", formatPDFCurrency(outflow)],
+          ["Net Cash Flow", formatPDFCurrency(net)],
+          ["Accounts Receivable (Outstanding Sales)", formatPDFCurrency(receivables)],
+          ["Accounts Payable (Outstanding Purchases)", formatPDFCurrency(payables)],
+        ],
+        theme: "striped",
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9, cellPadding: 3 },
       });
-    } else if (reportType === "Income and Expense") {
-      content += `Overall Income: ₹${plSummaryData.totalRevenue.toLocaleString()}\n`;
-      content += `Overall Expense: ₹${plSummaryData.totalExpenses.toLocaleString()}\n`;
+    } else if (reportType === "Financial Ratios") {
+      const hasRatios = Array.isArray(financialRatios) && financialRatios.length > 0;
+      if (!hasRatios) {
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(11);
+        doc.text("No financial ratio data available for the selected period.", 14, 45);
+      } else {
+        autoTable(doc, {
+          startY: 34,
+          head: [["Ratio Indicator", "Calculated Metric Value", "Health Benchmark Status"]],
+          body: financialRatios.map((r: any) => [
+            r.label,
+            typeof r.value === "number" ? formatPDFRatio(r.value) : r.value,
+            r.status
+          ]),
+          theme: "grid",
+          headStyles: { fillColor: [30, 41, 59] },
+          styles: { fontSize: 9, cellPadding: 2.5 },
+        });
+      }
     } else if (reportType === "Balance Sheet Overview") {
-      content += `Total Assets: ₹${bsSummary.assets.toLocaleString()}\n`;
-      content += `Total Liabilities: ₹${bsSummary.liabilities.toLocaleString()}\n`;
-      content += `-----------------------------------------\n`;
-      content += `Total Equity: ₹${bsSummary.equity.toLocaleString()}\n`;
+      const assetsVal = Number(bsSummary?.assets || 0);
+      const liabVal = Number(bsSummary?.liabilities || 0);
+      const equityVal = Number(bsSummary?.equity || 0);
+      const isBalanced = Math.abs(assetsVal - (liabVal + equityVal)) < 1.0;
+
+      autoTable(doc, {
+        startY: 34,
+        head: [["Balance Sheet Category", "Centralized System Valuation (INR)"]],
+        body: [
+          ["Total Current & Non-Current Assets", formatPDFCurrency(assetsVal)],
+          ["Total Liabilities (Trade Payables + Debt)", formatPDFCurrency(liabVal)],
+          ["Total Owner Equity & Retained Profits", formatPDFCurrency(equityVal)],
+          ["Total Liabilities + Equity", formatPDFCurrency(liabVal + equityVal)],
+          ["Balance Sheet Verification Status", isBalanced ? "BALANCED (Equal)" : "UNBALANCED"],
+        ],
+        theme: "striped",
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9, cellPadding: 3 },
+      });
     } else if (reportType === "Tax and GST Analysis") {
-      const outputGst = plSummaryData.totalRevenue * 0.18;
-      const inputItc = plSummaryData.totalExpenses * 0.18;
-      const netGst = Math.max(0, outputGst - inputItc);
-      content += `Output GST (18% on revenue): ₹${outputGst.toLocaleString()}\n`;
-      content += `Input ITC (18% on expenses): ₹${inputItc.toLocaleString()}\n`;
-      content += `-----------------------------------------\n`;
-      content += `Net GST Payable: ₹${netGst.toLocaleString()}\n`;
-    } else {
-      content += `No detailed data available.`;
+      const outputGst = Number(gstAnalyticsData?.gstSummary?.outputGst || 0);
+      const inputGst = Number(gstAnalyticsData?.gstSummary?.inputGst || 0);
+      const gstPayable = Number(gstAnalyticsData?.gstSummary?.gstPayable || 0);
+      const gstReceivable = Number(gstAnalyticsData?.gstSummary?.gstReceivable || 0);
+      const taxableSales = Number(gstAnalyticsData?.transactionSummary?.taxableSales || 0);
+      const taxablePurchases = Number(gstAnalyticsData?.transactionSummary?.taxablePurchases || 0);
+
+      autoTable(doc, {
+        startY: 34,
+        head: [["GST & Tax Analytics Category", "Centralized System Amount (INR)"]],
+        body: [
+          ["Taxable Sales Value", formatPDFCurrency(taxableSales)],
+          ["Output GST (Sales & POS Tax Collected)", formatPDFCurrency(outputGst)],
+          ["Taxable Purchases Value", formatPDFCurrency(taxablePurchases)],
+          ["Input GST (Input Tax Credit / ITC)", formatPDFCurrency(inputGst)],
+          ["Net GST Payable to Tax Authority", formatPDFCurrency(gstPayable)],
+          ["Net GST Credit Balance (Carry Forward)", formatPDFCurrency(gstReceivable)],
+        ],
+        theme: "striped",
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9, cellPadding: 3 },
+      });
     }
 
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 116, 139);
+      doc.text(
+        `Generated from Centralized System Data | ${REPORT_FOOTER_COMPANY} | Page ${i} of ${pageCount}`,
+        14,
+        287
+      );
+    }
+
+    const filename = `${reportType.toLowerCase().replace(/\s+/g, "_")}_report.pdf`;
+    doc.save(filename);
 
     toast({
       title: "Report Downloaded",
@@ -1057,7 +1198,48 @@ const Dashboard = () => {
             {plans.map((p) => {
               const isCurrent = currentPlan === p.key;
               const unlocksThisFeature = p.unlocks.includes(showUpgradeModalFor);
-              const isDisabled = isCurrent || (currentPlan === "annual" && p.key === "monthly") || (currentPlan === "lifetime" && (p.key === "monthly" || p.key === "annual"));
+              const isDisabled = isCurrent;
+              
+              const planOrder = { trial: 0, monthly: 1, annual: 2, lifetime: 3 };
+              const currentRank = planOrder[currentPlan as keyof typeof planOrder] || 0;
+              const targetRank = planOrder[p.key as keyof typeof planOrder] || 0;
+              const isDowngrade = targetRank < currentRank;
+
+              const handlePlanClick = async () => {
+                if (isDowngrade) {
+                  setUpgradingPlan(p.key);
+                  try {
+                    const token = localStorage.getItem("token");
+                    const res = await fetch(`${API_BASE_URL}/downgrade-subscription`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                      },
+                      body: JSON.stringify({ plan: p.key })
+                    });
+                    if (!res.ok) throw new Error("Failed to schedule downgrade.");
+                    const data = await res.json();
+                    setUser(data.user);
+                    await refreshUser();
+                    toast({
+                      title: "Downgrade Scheduled!",
+                      description: `Your plan will be changed to ${p.name.split(" ")[0]} at the end of your current billing cycle.`
+                    });
+                    closeUpgradeModal();
+                  } catch (err: any) {
+                    toast({
+                      variant: "destructive",
+                      title: "Action Failed",
+                      description: err.message
+                    });
+                  } finally {
+                    setUpgradingPlan(null);
+                  }
+                } else {
+                  handleUpgrade(p.key);
+                }
+              };
 
               return (
                 <div key={p.key} className={`border rounded-[20px] p-5 flex flex-col justify-between relative ${p.color}`}>
@@ -1089,23 +1271,27 @@ const Dashboard = () => {
                     <div className="h-px bg-slate-100 w-full mb-4"></div>
                     <button
                       disabled={isDisabled || upgradingPlan !== null}
-                      onClick={() => handleUpgrade(p.key)}
+                      onClick={handlePlanClick}
                       className={`w-full py-2.5 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                         isCurrent
                           ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                          : unlocksThisFeature
-                            ? "bg-[#006aff] hover:bg-[#005cdb] text-white shadow-sm"
-                            : "bg-slate-50 text-slate-400 hover:bg-slate-100 border border-slate-200"
+                          : isDowngrade
+                            ? "bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200"
+                            : unlocksThisFeature
+                              ? "bg-[#006aff] hover:bg-[#005cdb] text-white shadow-sm"
+                              : "bg-slate-50 text-slate-400 hover:bg-slate-100 border border-slate-200"
                       }`}
                     >
                       {isCurrent ? (
                         "Your Current Plan"
                       ) : upgradingPlan === p.key ? (
                         "Processing..."
+                      ) : isDowngrade ? (
+                        <>Downgrade to {p.name.split(" ")[0]}</>
                       ) : unlocksThisFeature ? (
                         <>Upgrade to {p.name.split(" ")[0]}</>
                       ) : (
-                        "Lacks this feature"
+                        <>Upgrade to {p.name.split(" ")[0]}</>
                       )}
                     </button>
                   </div>
@@ -1543,7 +1729,9 @@ const Dashboard = () => {
                       {invoicesList.length > 0 ? (
                         invoicesList.map((inv, i) => (
                           <tr key={i} className="border-b border-[#f4f5f8] last:border-0 hover:bg-[#f9fafd] transition-colors cursor-pointer">
-                            <td className="py-4 px-6 text-[14px] text-[#555] whitespace-nowrap">12 Aug 2026</td>
+                            <td className="py-4 px-6 text-[14px] text-[#555] whitespace-nowrap">
+                              {inv.rawDate ? new Date(inv.rawDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "N/A"}
+                            </td>
                             <td className="py-4 px-6 text-[14px] text-[#006aff] font-medium whitespace-nowrap">{inv.id}</td>
                             <td className="py-4 px-6 text-[14px] text-[#333] font-medium truncate max-w-[200px]">{inv.company}</td>
                             <td className="py-4 px-6 text-right whitespace-nowrap">
@@ -1578,18 +1766,14 @@ const Dashboard = () => {
                  </div>
                  <div className="p-6 flex-1 flex flex-col justify-center gap-5">
                     <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
-                       <span className="text-[14px] text-[#555]">Operating Activities</span>
-                       <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.8)}</span>
+                       <span className="text-[14px] text-[#555]">Operating Cash Inflow</span>
+                       <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow)}</span>
                     </div>
                     <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
-                       <span className="text-[14px] text-[#555]">Investing Activities</span>
-                       <span className="text-[15px] font-semibold text-[#f0483e]">{formatCurrency(cfsOutflow * 0.3)}</span>
+                       <span className="text-[14px] text-[#555]">Operating Cash Outflow</span>
+                       <span className="text-[15px] font-semibold text-[#f0483e]">-{formatCurrency(cfsOutflow)}</span>
                     </div>
-                    <div className="flex justify-between items-center pb-3 border-b border-[#f4f5f8]">
-                       <span className="text-[14px] text-[#555]">Financing Activities</span>
-                       <span className="text-[15px] font-semibold text-[#00b365]">+{formatCurrency(cfsInflow * 0.2)}</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-3">
+                    <div className="flex justify-between items-center pt-3 border-t border-[#eee]">
                        <span className="text-[16px] font-bold text-[#222]">Net Cash Flow</span>
                        <span className={`text-[18px] font-bold tabular-nums ${cfsNetFlow >= 0 ? "text-[#006aff]" : "text-[#f0483e]"}`}>
                          {formatCurrency(cfsNetFlow)}
@@ -1634,53 +1818,7 @@ const Dashboard = () => {
               </div>
             </DashboardWidgetLock>
 
-            {/* Income & Expense block (Full Width SVG line chart) */}
-            <DashboardWidgetLock moduleName="bookkeeping" className="flex flex-col min-w-0">
-              <div className="bg-white rounded-[4px] border border-[#e4e5e7] shadow-sm flex flex-col">
-                <div className="px-6 py-4 border-b border-[#e4e5e7] flex justify-between items-center bg-[#f9fafd]">
-                  <h3 className="text-[15px] font-bold text-[#222]">Income and Expense</h3>
-                  <button onClick={() => handleDownload("Income and Expense")} className="w-8 h-8 bg-white border border-[#ccc] rounded flex items-center justify-center text-[#555] hover:border-[#006aff] hover:text-[#006aff] transition-colors" title="Download">
-                    <Download className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="p-6 flex-1 w-full flex flex-col justify-center">
-                  {!revenueLinePath ? (
-                    <div className="flex-1 flex items-center justify-center text-[#999] text-[14px] font-medium py-16">
-                      No data available for this period
-                    </div>
-                  ) : (
-                    <>
-                      <div className="relative flex-1 flex min-h-[220px]">
-                        <div className="flex flex-col justify-between text-[12px] text-[#777] font-medium py-1 w-12 shrink-0">
-                          <span>{formatYAxis(revenueMax)}</span>
-                          <span>{formatYAxis(revenueMax * 0.75)}</span>
-                          <span>{formatYAxis(revenueMax * 0.5)}</span>
-                          <span>{formatYAxis(revenueMax * 0.25)}</span>
-                          <span>0</span>
-                        </div>
-                        <div className="flex-1 relative border-b border-[#eee]">
-                          <div className="absolute inset-0 flex flex-col justify-between py-1">
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-[#f4f5f8]"></div>
-                            <div className="h-px w-full bg-transparent"></div>
-                          </div>
-                          <svg className="absolute inset-0 w-full h-full pb-1" preserveAspectRatio="none" viewBox="0 0 100 100">
-                            <path d={revenueLinePath} fill="none" stroke="#006aff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-[11px] text-[#777] font-semibold uppercase tracking-wider pl-12 pt-4">
-                        {revenueXLabels.map((lbl, idx) => (
-                          <span key={idx} className={idx >= 3 ? "hidden sm:inline" : ""}>{lbl}</span>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </DashboardWidgetLock>
+
           </div>
 
           {/* --- Row 4: Balance Sheet & Tax / GST Analysis --- */}

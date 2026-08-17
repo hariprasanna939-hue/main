@@ -34,10 +34,10 @@ const SubscriptionContext = createContext<SubscriptionContextType | undefined>(u
 
 // Syncing permitted modules list per plan
 export const planModules: Record<string, string[]> = {
-  trial: ["dashboard", "invoice", "inventory", "bookkeeping"], // Sandbox
-  monthly: ["dashboard", "invoice", "inventory"], // Express
-  annual: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios"], // Professional
-  lifetime: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering"] // Enterprise
+  trial: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering", "export"], // Sandbox (Full Access)
+  monthly: ["dashboard", "invoice", "inventory", "export"], // Express
+  annual: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "export"], // Professional
+  lifetime: ["dashboard", "invoice", "inventory", "bookkeeping", "tax-gst", "balance-sheet", "profit-loss", "cashflow", "cashflow-statement", "financial-ratios", "payroll", "bank-reconciliation", "fraud-detection", "civil-engineering", "export"] // Enterprise
 };
 
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -101,8 +101,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Admin has full access to all business modules
     if (user.role === "admin") return true;
 
-    // In-store POS accounts are hard-restricted to Invoice and Inventory only
-    if (user.role === "instore") {
+    // In-store POS accounts are hard-restricted to Invoice and Inventory only (unless on active Sandbox Trial)
+    if (user.role === "instore" && user.subscriptionPlan !== "trial") {
       return ["invoice", "inventory"].includes(moduleName);
     }
 

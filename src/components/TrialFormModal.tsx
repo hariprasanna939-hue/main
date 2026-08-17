@@ -117,7 +117,7 @@ export const TrialFormModal = () => {
                     <div>
                       <h2 className="text-xl font-bold text-slate-900 mb-1">You're All Set!</h2>
                       <p className="text-sm text-slate-500 leading-relaxed max-w-xs">
-                        Thanks, <span className="font-semibold text-slate-700">{form.fullName}</span>! Our team will reach you at <span className="font-semibold text-slate-700">{form.email}</span> to activate your 30-day free trial.
+                        Thanks, <span className="font-semibold text-slate-700">{form.fullName}</span>! Our team will reach you at <span className="font-semibold text-slate-700">{form.email}</span> to activate your 14-day free trial.
                       </p>
                     </div>
                     <button
@@ -132,7 +132,7 @@ export const TrialFormModal = () => {
                   <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     {/* Title */}
                     <h2 className="text-2xl font-bold mb-1" style={{ color: "#2563eb" }}>
-                      Start Your 30-Day Free Trial
+                      Start Your 14-Day Free Trial
                     </h2>
                     <p className="text-sm text-slate-500 mb-6 leading-relaxed">
                       Fill out the details below, and our team will get you set up with your free trial account immediately.

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 import { VoiceButton } from "@/components/ui/VoiceButton";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ interface FinancialSummary {
 
 const Bookkeeping = () => {
     const navigate = useNavigate();
+    const { hasAccess } = useSubscription();
     const [activeTab, setActiveTab] = useState("entries");
     const [companyName, setCompanyName] = useState(DEFAULT_REPORT_COMPANY_NAME);
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -388,6 +390,10 @@ const Bookkeeping = () => {
 
     // Export data to PDF
     const exportToPDF = () => {
+        if (!hasAccess("export")) {
+            toast.error("Exporting reports is only available in Professional and Enterprise plans.");
+            return;
+        }
         if (filteredEntries.length === 0) {
             toast.error("No entries to export. Please add entries first.");
             return;

@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import { checkPlanLimit } from "../utils/authMiddleware.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -179,7 +180,11 @@ router.post("/create", verifyTokenOptional, async (req, res) => {
     console.log("📥 Received Invoice Data:", JSON.stringify(req.body, null, 2));
     const invoiceData = req.body;
 
-    if (req.user) {
+    if (req.user && req.user.id !== "000000000000000000000000") {
+      const limitCheck = await checkPlanLimit(req.user.id, req.user.role, "invoice");
+      if (!limitCheck.allowed) {
+        return res.status(403).json(limitCheck);
+      }
       invoiceData.userId = req.user.id;
       if (!invoiceData.createdBy) {
         invoiceData.createdBy = req.user.id;
@@ -411,9 +416,20 @@ router.get("/search", verifyTokenOptional, async (req, res) => {
 // ✅ 3. Get Single Invoice by ID
 router.get("/:id", async (req, res) => {
   try {
+    const userIdStr = req.user._id ? req.user._id.toString() : req.user.id;
+    const userIdObj = new mongoose.Types.ObjectId(userIdStr);
+    const userFilter = {
+      $or: [
+        { userId: userIdObj },
+        { userId: userIdStr },
+        { createdBy: userIdStr }
+      ]
+    };
+
     const invoice = await Invoice.findOne({
       _id: req.params.id,
-      isDeleted: false
+      isDeleted: false,
+      ...userFilter
     });
 
     if (!invoice) {
@@ -435,9 +451,20 @@ router.get("/:id", async (req, res) => {
 // ✅ 4. Get Invoice by Invoice Number
 router.get("/number/:invoiceNumber", async (req, res) => {
   try {
+    const userIdStr = req.user._id ? req.user._id.toString() : req.user.id;
+    const userIdObj = new mongoose.Types.ObjectId(userIdStr);
+    const userFilter = {
+      $or: [
+        { userId: userIdObj },
+        { userId: userIdStr },
+        { createdBy: userIdStr }
+      ]
+    };
+
     const invoice = await Invoice.findOne({
       invoiceNumber: req.params.invoiceNumber,
-      isDeleted: false
+      isDeleted: false,
+      ...userFilter
     });
 
     if (!invoice) {
@@ -460,10 +487,19 @@ router.get("/number/:invoiceNumber", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const updateData = req.body;
+    const userIdStr = req.user._id ? req.user._id.toString() : req.user.id;
+    const userIdObj = new mongoose.Types.ObjectId(userIdStr);
+    const userFilter = {
+      $or: [
+        { userId: userIdObj },
+        { userId: userIdStr },
+        { createdBy: userIdStr }
+      ]
+    };
 
     // Recalculate balance due if payment is updated
     if (updateData.amountPaid !== undefined) {
-      const currentInvoice = await Invoice.findById(req.params.id);
+      const currentInvoice = await Invoice.findOne({ _id: req.params.id, isDeleted: false, ...userFilter });
       if (currentInvoice) {
         updateData.balanceDue = currentInvoice.grandTotal - updateData.amountPaid;
 
@@ -480,8 +516,8 @@ router.put("/:id", async (req, res) => {
     // Set updated timestamp
     updateData.updatedAt = new Date();
 
-    const updatedInvoice = await Invoice.findByIdAndUpdate(
-      req.params.id,
+    const updatedInvoice = await Invoice.findOneAndUpdate(
+      { _id: req.params.id, isDeleted: false, ...userFilter },
       updateData,
       { new: true, runValidators: true }
     );
@@ -508,8 +544,18 @@ router.put("/:id", async (req, res) => {
 // ✅ 6. Delete Invoice (Soft Delete)
 router.delete("/:id", async (req, res) => {
   try {
-    const deletedInvoice = await Invoice.findByIdAndUpdate(
-      req.params.id,
+    const userIdStr = req.user._id ? req.user._id.toString() : req.user.id;
+    const userIdObj = new mongoose.Types.ObjectId(userIdStr);
+    const userFilter = {
+      $or: [
+        { userId: userIdObj },
+        { userId: userIdStr },
+        { createdBy: userIdStr }
+      ]
+    };
+
+    const deletedInvoice = await Invoice.findOneAndUpdate(
+      { _id: req.params.id, ...userFilter },
       {
         isDeleted: true,
         status: 'cancelled',
@@ -540,6 +586,15 @@ router.delete("/:id", async (req, res) => {
 router.patch("/:id/status", async (req, res) => {
   try {
     const { status } = req.body;
+    const userIdStr = req.user._id ? req.user._id.toString() : req.user.id;
+    const userIdObj = new mongoose.Types.ObjectId(userIdStr);
+    const userFilter = {
+      $or: [
+        { userId: userIdObj },
+        { userId: userIdStr },
+        { createdBy: userIdStr }
+      ]
+    };
 
     const validStatuses = ['draft', 'sent', 'viewed', 'paid', 'overdue', 'cancelled'];
     if (!validStatuses.includes(status)) {
@@ -548,8 +603,8 @@ router.patch("/:id/status", async (req, res) => {
       });
     }
 
-    const updatedInvoice = await Invoice.findByIdAndUpdate(
-      req.params.id,
+    const updatedInvoice = await Invoice.findOneAndUpdate(
+      { _id: req.params.id, isDeleted: false, ...userFilter },
       {
         status,
         updatedAt: new Date()
@@ -580,6 +635,15 @@ router.patch("/:id/status", async (req, res) => {
 router.patch("/:id/payment", async (req, res) => {
   try {
     const { paymentStatus, amountPaid, paymentMethod, paymentDate } = req.body;
+    const userIdStr = req.user._id ? req.user._id.toString() : req.user.id;
+    const userIdObj = new mongoose.Types.ObjectId(userIdStr);
+    const userFilter = {
+      $or: [
+        { userId: userIdObj },
+        { userId: userIdStr },
+        { createdBy: userIdStr }
+      ]
+    };
 
     const validPaymentStatuses = ['pending', 'partial', 'paid', 'overdue', 'cancelled'];
     if (!validPaymentStatuses.includes(paymentStatus)) {
@@ -599,14 +663,14 @@ router.patch("/:id/payment", async (req, res) => {
 
     // Recalculate balance due
     if (amountPaid !== undefined) {
-      const currentInvoice = await Invoice.findById(req.params.id);
+      const currentInvoice = await Invoice.findOne({ _id: req.params.id, isDeleted: false, ...userFilter });
       if (currentInvoice) {
         updateData.balanceDue = currentInvoice.grandTotal - amountPaid;
       }
     }
 
-    const updatedInvoice = await Invoice.findByIdAndUpdate(
-      req.params.id,
+    const updatedInvoice = await Invoice.findOneAndUpdate(
+      { _id: req.params.id, isDeleted: false, ...userFilter },
       updateData,
       { new: true }
     );

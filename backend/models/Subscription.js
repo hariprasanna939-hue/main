@@ -5,7 +5,10 @@ const subscriptionSchema = new mongoose.Schema({
   planId: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
   status: { type: String, enum: ["active", "expired", "pending"], default: "pending" },
   startDate: { type: Date, default: Date.now },
-  endDate: { type: Date } // Note: null/undefined for lifetime
+  endDate: { type: Date }, // Note: null/undefined for lifetime
+  pendingDowngradePlanId: { type: mongoose.Schema.Types.ObjectId, ref: "Plan" },
+  razorpayPaymentId: { type: String },
+  razorpayOrderId: { type: String }
 }, {
   timestamps: true
 });

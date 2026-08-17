@@ -32,6 +32,30 @@ export const authenticateUser = async (req, res, next) => {
       return res.status(401).json({ message: "User not found or account deleted." });
     }
 
+    // Lazy check: Apply pending downgrade if subscription has expired
+    if (user.pendingDowngradePlan && user.subscriptionEndDate && new Date() >= new Date(user.subscriptionEndDate)) {
+      const Plan = mongoose.model("Plan");
+      const Subscription = mongoose.model("Subscription");
+      
+      const newPlanKey = user.pendingDowngradePlan;
+      const planName = newPlanKey === "annual" ? "Professional" : newPlanKey === "monthly" ? "Express" : newPlanKey === "lifetime" ? "Enterprise" : "Express";
+      const planDoc = await Plan.findOne({ name: planName });
+      
+      if (planDoc) {
+        // Set old active subscriptions to expired
+        await Subscription.updateMany(
+          { userId: user._id, status: "active" },
+          { status: "expired" }
+        );
+
+        // Mark user as expired (so they have to pay for the new plan)
+        user.subscriptionPlan = newPlanKey;
+        user.subscriptionStatus = "expired"; 
+        user.pendingDowngradePlan = undefined;
+        await user.save();
+      }
+    }
+
     req.user = user;
     next();
   } catch (error) {
@@ -53,7 +77,11 @@ export const checkSubscription = async (req, res, next) => {
     return res.status(401).json({ message: "User not authenticated." });
   }
 
-  // Admin bypasses subscription restriction check
+  if (req.user.subscriptionStatus === "expired" || (req.user.subscriptionEndDate && new Date() > new Date(req.user.subscriptionEndDate))) {
+    return res.status(403).json({ message: "Subscription has expired. Please upgrade or renew." });
+  }
+
+  // Admin bypasses module restriction check if subscription is valid
   if (req.user.role === "admin") {
     return next();
   }
@@ -140,14 +168,14 @@ export const checkModuleAccess = (moduleName) => {
       return next();
     }
 
-    // In-store POS accounts are hard-restricted to invoice, inventory, and dashboard
-    if (req.user?.role === "instore") {
+    // In-store POS accounts are hard-restricted to invoice, inventory, and dashboard (unless on active Sandbox Trial)
+    if (req.user?.role === "instore" && req.user?.subscriptionPlan !== "trial") {
       if (!["invoice", "inventory"].includes(moduleName)) {
         return res.status(403).json({ message: "In-Store accounts only have access to Invoice and Inventory modules." });
       }
     }
 
-    const allowedModules = req.subscription.planId.allowedModules || [];
+     const allowedModules = req.subscription.planId.allowedModules || [];
     if (!allowedModules.includes(moduleName)) {
       return res.status(403).json({ 
         message: "Module not included in current subscription", 
@@ -155,6 +183,93 @@ export const checkModuleAccess = (moduleName) => {
       });
     }
 
+    // Centralized Report Export restrictions for export paths
+    if (req.originalUrl && req.originalUrl.includes("/export")) {
+      if (!allowedModules.includes("export")) {
+        return res.status(403).json({ 
+          message: "Report exporting is not included in your current plan. Please upgrade to Professional or Enterprise.", 
+          requiredModule: "export" 
+        });
+      }
+    }
+
     next();
   };
+};
+
+// 4. Check user plan limits (Invoices, Purchase Invoices, etc.)
+export const checkPlanLimit = async (userId, userRole, resourceType) => {
+  try {
+    const User = mongoose.model("User");
+    const user = await User.findById(userId);
+    if (!user) return { allowed: true };
+
+    // Admin bypasses all limits
+    if (userRole === "admin" || user.role === "admin") return { allowed: true };
+
+    // Block expired users
+    if (user.subscriptionStatus === "expired" || new Date() > new Date(user.subscriptionEndDate)) {
+      return {
+        allowed: false,
+        code: "SUBSCRIPTION_EXPIRED",
+        message: "Your subscription has expired. Please renew to continue."
+      };
+    }
+
+    let invoiceLimit = 50; // default Sandbox limit
+    
+    // Fetch active subscription
+    const Subscription = mongoose.model("Subscription");
+    const subscription = await Subscription.findOne({ 
+      userId, 
+      status: "active" 
+    }).populate("planId");
+
+    let activePlan = null;
+    if (subscription && subscription.planId) {
+      activePlan = subscription.planId;
+    } else {
+      // Legacy plan mapping fallback
+      const Plan = mongoose.model("Plan");
+      const planName = planKeyToName[user.subscriptionPlan || "trial"] || "Sandbox";
+      activePlan = await Plan.findOne({ name: planName });
+    }
+
+    if (activePlan) {
+      invoiceLimit = activePlan.invoiceLimit ?? 50;
+    }
+
+    let count = 0;
+    if (resourceType === "invoice" || resourceType === "purchase-invoice") {
+      const Invoice = mongoose.model("Invoice");
+      let PurchaseInvoice = null;
+      try {
+        PurchaseInvoice = mongoose.model("PurchaseInvoice");
+      } catch (err) {
+        // Model might not be initialized yet
+      }
+
+      // Sales invoices (exclude soft-deleted)
+      const salesCount = await Invoice.countDocuments({ userId, isDeleted: false });
+      // Purchase invoices (no soft-delete field exists)
+      const purchaseCount = PurchaseInvoice ? await PurchaseInvoice.countDocuments({ userId }) : 0;
+
+      count = salesCount + purchaseCount;
+    }
+
+    if (count >= invoiceLimit) {
+      return {
+        allowed: false,
+        code: "PLAN_LIMIT_REACHED",
+        resource: resourceType,
+        limit: invoiceLimit,
+        message: `You have reached the limit of ${invoiceLimit.toLocaleString()} total invoices (sales + purchase) on your ${activePlan?.name || "current"} plan. Please upgrade to create more.`
+      };
+    }
+
+    return { allowed: true };
+  } catch (error) {
+    console.error("Error checking plan limit:", error);
+    return { allowed: true }; // Allow fallback on internal error so we don't break operation
+  }
 };

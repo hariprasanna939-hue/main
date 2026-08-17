@@ -30,7 +30,6 @@ import InvoiceTemplates from "./pages/InvoiceTemplates";
 import InvoiceTemplateEditor from "./pages/InvoiceTemplateEditor";
 import AiAccountingExplained from "./pages/AiAccountingExplained";
 import ThankYou from "./pages/ThankYou";
-import ResetPassword from "./pages/ResetPassword";
 
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { SubscriptionGuard } from "@/components/SubscriptionGuard";
@@ -67,74 +66,73 @@ const App = () => {
                 element={isMaintenanceMode ? <ServerIssues /> : <ProfileSettings />}
               />
 
-              <Route 
-                path="/payroll" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="payroll"><Payroll /></SubscriptionGuard>} 
+              <Route
+                path="/payroll"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="payroll"><Payroll /></SubscriptionGuard>}
               />
-              <Route 
-                path="/tax-gst" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="tax-gst"><TaxGST /></SubscriptionGuard>} 
+              <Route
+                path="/tax-gst"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="tax-gst"><TaxGST /></SubscriptionGuard>}
               />
-              <Route 
-                path="/balance-sheet" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="balance-sheet"><BalanceSheet /></SubscriptionGuard>} 
+              <Route
+                path="/balance-sheet"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="balance-sheet"><BalanceSheet /></SubscriptionGuard>}
               />
-              <Route 
-                path="/profit-loss" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="profit-loss"><ProfitLoss /></SubscriptionGuard>} 
+              <Route
+                path="/profit-loss"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="profit-loss"><ProfitLoss /></SubscriptionGuard>}
               />
-              <Route 
-                path="/cashflow" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="cashflow"><CashFlow /></SubscriptionGuard>} 
+              <Route
+                path="/cashflow"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="cashflow"><CashFlow /></SubscriptionGuard>}
               />
-              <Route 
-                path="/civil-engineering" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="civil-engineering"><CivilEngineering /></SubscriptionGuard>} 
+              <Route
+                path="/civil-engineering"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="civil-engineering"><CivilEngineering /></SubscriptionGuard>}
               />
-              <Route 
-                path="/cashflow-statement" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="cashflow-statement"><CashFlowStatement /></SubscriptionGuard>} 
+              <Route
+                path="/cashflow-statement"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="cashflow-statement"><CashFlowStatement /></SubscriptionGuard>}
               />
-              <Route 
-                path="/financial-ratios" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="financial-ratios"><FinancialRatios /></SubscriptionGuard>} 
+              <Route
+                path="/financial-ratios"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="financial-ratios"><FinancialRatios /></SubscriptionGuard>}
               />
-              <Route 
-                path="/bookkeeping" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="bookkeeping"><Bookkeeping /></SubscriptionGuard>} 
+              <Route
+                path="/bookkeeping"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="bookkeeping"><Bookkeeping /></SubscriptionGuard>}
               />
-              <Route 
-                path="/inventory" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="inventory"><Inventory /></SubscriptionGuard>} 
+              <Route
+                path="/inventory"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="inventory"><Inventory /></SubscriptionGuard>}
               />
-              <Route 
-                path="/bank-reconciliation" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="bank-reconciliation"><BankReconciliation /></SubscriptionGuard>} 
+              <Route
+                path="/bank-reconciliation"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="bank-reconciliation"><BankReconciliation /></SubscriptionGuard>}
               />
-              <Route 
-                path="/fraud-detection" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="fraud-detection"><FraudDetection /></SubscriptionGuard>} 
+              <Route
+                path="/fraud-detection"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="fraud-detection"><FraudDetection /></SubscriptionGuard>}
               />
-              <Route 
-                path="/invoice" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><AutomationInvoice /></SubscriptionGuard>} 
+              <Route
+                path="/invoice"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><AutomationInvoice /></SubscriptionGuard>}
               />
-              <Route 
-                path="/invoice/templates" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><InvoiceTemplates /></SubscriptionGuard>} 
+              <Route
+                path="/invoice/templates"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><InvoiceTemplates /></SubscriptionGuard>}
               />
-              <Route 
-                path="/invoice/templates/create" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><InvoiceTemplateEditor /></SubscriptionGuard>} 
+              <Route
+                path="/invoice/templates/create"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><InvoiceTemplateEditor /></SubscriptionGuard>}
               />
-              <Route 
-                path="/invoice/ocr" 
-                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><AutomationInvoice /></SubscriptionGuard>} 
+              <Route
+                path="/invoice/ocr"
+                element={isMaintenanceMode ? <ServerIssues /> : <SubscriptionGuard module="invoice"><AutomationInvoice /></SubscriptionGuard>}
               />
               <Route path="/invoice/view/:id" element={<PublicInvoiceView />} />
               <Route path="/purchase-invoice/view/:id" element={<PublicPurchaseInvoiceView />} />
               <Route path="/thank-you" element={<ThankYou />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>

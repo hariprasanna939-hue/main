@@ -9,8 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Download, Calculator, Sparkles, TrendingUp, Search, FileText, Database, BarChart3 } from "lucide-react";
-import { DEFAULT_REPORT_COMPANY_NAME, REPORT_FOOTER_COMPANY, getReportCompanyName } from "@/lib/reportBranding";
+import { DEFAULT_REPORT_COMPANY_NAME, REPORT_FOOTER_COMPANY, getReportCompanyName, formatPDFCurrency, formatPDFRatio } from "@/lib/reportBranding";
 import { API_BASE_URL } from "@/lib/api";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface FormData {
   companyName: string;
@@ -313,60 +315,81 @@ const FinancialRatios = () => {
   }, [searchTerm, ratiosHistory]);
 
   const downloadReport = (record: RatioRecord) => {
-    const reportContent = `
-╔════════════════════════════════════════════╗
-║        FINANCIAL RATIOS REPORT             ║
-║                 ${record.period}                 ║
-╚════════════════════════════════════════════╝
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const company = getReportCompanyName(record.companyName);
 
-Company: ${getReportCompanyName(record.companyName)}
-Analysis Date: ${record.createdAt || "N/A"}
+    // Header Branding
+    doc.setFillColor(15, 23, 42); // dark indigo / slate-950
+    doc.rect(0, 0, 210, 28, "F");
 
-FINANCIAL DATA:
-  Current Assets:       ₹${record.currentAssets.toLocaleString()}
-  Current Liabilities:  ₹${record.currentLiabilities.toLocaleString()}
-  Total Assets:         ₹${record.totalAssets.toLocaleString()}
-  Total Liabilities:    ₹${record.totalLiabilities.toLocaleString()}
-  Total Equity:         ₹${record.totalEquity.toLocaleString()}
-  Revenue:              ₹${record.revenue.toLocaleString()}
-  Net Income:           ₹${record.netIncome.toLocaleString()}
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("FINANCIAL RATIOS ANALYSIS REPORT", 14, 12);
 
-FINANCIAL RATIOS:
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Company: ${company} | Period: ${record.period || "Current"}`, 14, 20);
 
-LIQUIDITY RATIOS:
-  Current Ratio:        ${record.ratios.currentRatio.toFixed(2)}
-  Quick Ratio:          ${record.ratios.quickRatio.toFixed(2)}
+    // Report Metadata Table
+    autoTable(doc, {
+      startY: 32,
+      head: [["Metric Category", "Centralized Input Value (INR)"]],
+      body: [
+        ["Current Assets", formatPDFCurrency(record.currentAssets || 0)],
+        ["Current Liabilities", formatPDFCurrency(record.currentLiabilities || 0)],
+        ["Total Assets", formatPDFCurrency(record.totalAssets || 0)],
+        ["Total Liabilities", formatPDFCurrency(record.totalLiabilities || 0)],
+        ["Total Equity", formatPDFCurrency(record.totalEquity || 0)],
+        ["Total Revenue", formatPDFCurrency(record.revenue || 0)],
+        ["Net Income / Profit", formatPDFCurrency(record.netIncome || 0)],
+      ],
+      theme: "striped",
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: "bold" },
+      styles: { fontSize: 9, cellPadding: 2.5 },
+    });
 
-SOLVENCY RATIOS:
-  Debt-to-Equity:       ${record.ratios.debtToEquity.toFixed(2)}
-  Debt Ratio:           ${record.ratios.debtRatio.toFixed(2)}
+    const ratios = record.ratios || {};
+    const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : 100;
 
-PROFITABILITY RATIOS:
-  Gross Profit Margin:  ${record.ratios.grossProfitMargin.toFixed(2)}%
-  Net Profit Margin:    ${record.ratios.netProfitMargin.toFixed(2)}%
-  Return on Equity:     ${record.ratios.roe.toFixed(2)}%
-  Return on Assets:     ${record.ratios.roa.toFixed(2)}%
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text("CALCULATED FINANCIAL RATIOS", 14, finalY);
 
-EFFICIENCY RATIOS:
-  Assets Turnover:      ${record.ratios.assetsTurnover.toFixed(2)}
+    autoTable(doc, {
+      startY: finalY + 4,
+      head: [["Ratio Name", "Formula / Indicator", "Calculated Value", "Status Benchmark"]],
+      body: [
+        ["Current Ratio", "Current Assets / Current Liabilities", formatPDFRatio(ratios.currentRatio), ratios.currentRatio >= 1.5 ? "Good (> 1.5)" : "Watch (< 1.5)"],
+        ["Quick Ratio", "(Current Assets - Inventory) / Liabilities", formatPDFRatio(ratios.quickRatio), ratios.quickRatio >= 1.0 ? "Good (> 1.0)" : "Watch (< 1.0)"],
+        ["Debt-to-Equity", "Total Debt / Total Equity", formatPDFRatio(ratios.debtToEquity), ratios.debtToEquity <= 1.5 ? "Good (<= 1.5)" : "High Debt"],
+        ["Debt Ratio", "Total Debt / Total Assets", formatPDFRatio(ratios.debtRatio), ratios.debtRatio <= 0.5 ? "Good (<= 0.5)" : "Moderate/High"],
+        ["Gross Profit Margin", "(Revenue - COGS) / Revenue", formatPDFRatio(ratios.grossProfitMargin, "%"), ratios.grossProfitMargin >= 20 ? "Good (>= 20%)" : "Low"],
+        ["Net Profit Margin", "Net Income / Revenue", formatPDFRatio(ratios.netProfitMargin, "%"), ratios.netProfitMargin >= 10 ? "Good (>= 10%)" : "Low"],
+        ["Return on Equity (ROE)", "Net Income / Total Equity", formatPDFRatio(ratios.roe, "%"), ratios.roe >= 15 ? "Strong (>= 15%)" : "Moderate"],
+        ["Return on Assets (ROA)", "Net Income / Total Assets", formatPDFRatio(ratios.roa, "%"), ratios.roa >= 5 ? "Strong (>= 5%)" : "Moderate"],
+        ["Asset Turnover Ratio", "Revenue / Total Assets", formatPDFRatio(ratios.assetsTurnover), ratios.assetsTurnover >= 0.5 ? "Healthy" : "Low Turnover"],
+      ],
+      theme: "grid",
+      headStyles: { fillColor: [14, 165, 233], textColor: [255, 255, 255], fontStyle: "bold" },
+      styles: { fontSize: 9, cellPadding: 2.5 },
+    });
 
-MARKET RATIOS:
-  EPS:                  ₹${record.ratios.eps.toFixed(2)}
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 116, 139);
+      doc.text(
+        `Generated from Centralized Accounting System | ${REPORT_FOOTER_COMPANY} | Page ${i} of ${pageCount}`,
+        14,
+        287
+      );
+    }
 
--------------------------------------------
-Generated by ${REPORT_FOOTER_COMPANY}
-Powered by Advanced Ratio Engine
-    `.trim();
-
-    const blob = new Blob([reportContent], { type: "text/plain" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `financial_ratios_${record.companyName.replace(/\s+/g, "_")}_${Date.now()}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    doc.save(`Financial_Ratios_${company.replace(/\s+/g, "_")}_${Date.now()}.pdf`);
   };
 
   const handleBackToDashboard = () => {

@@ -79,6 +79,7 @@ export async function getFinanceMetrics(userId, start, end) {
             { userId: userObjectId },
             { userId: userId.toString() }
         ],
+        isDeleted: { $ne: true },
         date: { $gte: startDate, $lte: endDate }
     });
 
@@ -152,6 +153,7 @@ export async function getFinanceMetrics(userId, start, end) {
                 { userId: userObjectId },
                 { userId: userId.toString() }
             ],
+            isDeleted: { $ne: true },
             createdAt: { $gte: startDate, $lte: endDate }
         });
     }
@@ -169,6 +171,7 @@ export async function getFinanceMetrics(userId, start, end) {
                 { userId: userObjectId },
                 { userId: userId.toString() }
             ],
+            isDeleted: { $ne: true },
             createdAt: { $lte: endDate }
         });
         purchaseInvoiceOutstanding = allPurchaseInvoicesUpToPeriod.reduce((sum, inv) => sum + (inv.balance || 0), 0);
@@ -180,6 +183,7 @@ export async function getFinanceMetrics(userId, start, end) {
             { userId: userObjectId },
             { userId: userId.toString() }
         ],
+        isDeleted: { $ne: true },
         saleDate: { $gte: startDate, $lte: endDate }
     });
 
@@ -216,6 +220,7 @@ export async function getFinanceMetrics(userId, start, end) {
                 { createdBy: userObjectId },
                 { createdBy: userId.toString() }
             ],
+            isDeleted: { $ne: true },
             createdAt: { $gte: startDate, $lte: endDate }
         });
     }
@@ -301,6 +306,7 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
             { userId: userObjectId },
             { userId: userId.toString() }
         ],
+        isDeleted: { $ne: true },
         date: { $lte: endDate }
     });
     const validBkEntries = bkEntries.filter(e => !e.isAutomated && !e.referenceId);
@@ -342,6 +348,7 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
                 { userId: userObjectId },
                 { userId: userId.toString() }
             ],
+            isDeleted: { $ne: true },
             createdAt: { $lte: endDate }
         });
     }
@@ -355,6 +362,7 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
             { userId: userObjectId },
             { userId: userId.toString() }
         ],
+        isDeleted: { $ne: true },
         saleDate: { $lte: endDate }
     });
     const inventorySaleSubtotal = inventorySales.reduce((sum, s) => sum + (s.subtotal || 0), 0);
@@ -368,7 +376,8 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
             $or: [
                 { userId: userObjectId },
                 { userId: userId.toString() }
-            ]
+            ],
+            isDeleted: { $ne: true }
         });
     }
     const inventoryItemsMap = new Map(inventoryItems.map(item => [item._id.toString(), item]));
@@ -394,22 +403,15 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
                 { createdBy: userObjectId },
                 { createdBy: userId.toString() }
             ],
+            isDeleted: { $ne: true },
             createdAt: { $lte: endDate }
         });
     }
     const payrollSalariesExpense = payrolls.reduce((sum, pr) => sum + (pr.grossSalary || 0), 0);
 
-    // 6. Existing Balance Sheet baseline data if any
-    const BalanceSheetModel = getBalanceSheetModel();
-    let baselineBS = null;
-    if (BalanceSheetModel) {
-        baselineBS = await BalanceSheetModel.findOne({
-            $or: [
-                { userId: userObjectId },
-                { userId: userId.toString() }
-            ]
-        }).sort({ createdAt: -1 });
-    }
+    // 6. Balance Sheet baseline calculations from live central data
+    const fixedAssets = 0;
+    const nonCurrentLiabilities = 0;
 
     // Cash and Cash Equivalents
     const totalCashInflow = salesInvoicePaid + bkIncome + inventorySalePaid;
@@ -417,11 +419,9 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
     const cashAndBank = totalCashInflow - totalCashOutflow;
 
     const currentAssets = cashAndBank + accountsReceivable + currentInventoryValuation;
-    const fixedAssets = baselineBS ? (baselineBS.nonCurrentAssets || 0) : 0;
     const totalAssets = currentAssets + fixedAssets;
 
     const currentLiabilities = accountsPayable;
-    const nonCurrentLiabilities = baselineBS ? (baselineBS.nonCurrentLiabilities || 0) : 0;
     const totalLiabilities = currentLiabilities + nonCurrentLiabilities;
 
     // Retained Earnings = Cumulative Revenue - Cumulative Expenses
@@ -429,13 +429,12 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
     const cumulativeExpenses = calculatedCogs + payrollSalariesExpense + bkExpense + purchaseInvoiceSubtotal;
     const retainedEarnings = cumulativeRevenue - cumulativeExpenses;
 
-    const baselineEquity = baselineBS ? (baselineBS.equity || 0) : 0;
     const totalEquity = totalAssets - totalLiabilities;
     const balanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1.0;
 
     return {
-        companyName: baselineBS?.companyName || "Your Company",
-        financialYear: baselineBS?.financialYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+        companyName: "Your Company",
+        financialYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
         period,
         assets: {
             cashAndBank,
@@ -452,7 +451,7 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
             totalLiabilities
         },
         equity: {
-            ownerEquity: baselineEquity,
+            ownerEquity: 0,
             retainedEarnings,
             totalEquity
         },
@@ -478,7 +477,7 @@ export async function getLiveBalanceSheet(userId, period = "this-month") {
                 ]
             },
             equity: [
-                { label: "Owner Capital", value: baselineEquity },
+                { label: "Owner Capital", value: 0 },
                 { label: "Retained Earnings / Accumulated Profit", value: retainedEarnings }
             ]
         }
@@ -512,6 +511,7 @@ export async function getGstAnalytics(userId, period = "this-month") {
             { userId: userObjectId },
             { userId: userId.toString() }
         ],
+        isDeleted: { $ne: true },
         saleDate: { $gte: startDate, $lte: endDate }
     });
 
@@ -524,6 +524,7 @@ export async function getGstAnalytics(userId, period = "this-month") {
                 { userId: userObjectId },
                 { userId: userId.toString() }
             ],
+            isDeleted: { $ne: true },
             createdAt: { $gte: startDate, $lte: endDate }
         });
     }

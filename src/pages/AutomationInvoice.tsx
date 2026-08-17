@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { parseVoiceInvoiceText, parseInvoiceText } from "@/lib/voiceInvoiceParser";
 import { API_ENDPOINTS, API_BASE_URL } from "@/lib/api";
+import { formatPDFCurrency } from "@/lib/reportBranding";
 import Tesseract from "tesseract.js";
 import DocScanner from "@/components/DocScanner";
 import { Button } from "@/components/ui/button";
@@ -753,28 +754,30 @@ const AutomationInvoice = () => {
       // Load from backend
       try {
         const token = localStorage.getItem("token");
-        const response = await fetch(`${API_BASE_URL}/invoice/all?limit=100`, {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.invoices && Array.isArray(data.invoices)) {
-            const backendInvoices = data.invoices.map((inv: any) => ({
+        const [salesRes, purchaseRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/invoice/all?limit=100`, { headers: { "Authorization": `Bearer ${token}` } }).catch(() => null),
+          fetch(`${API_BASE_URL}/purchase-invoice/all`, { headers: { "Authorization": `Bearer ${token}` } }).catch(() => null)
+        ]);
+
+        let backendInvoices: any[] = [];
+
+        if (salesRes && salesRes.ok) {
+          const salesData = await salesRes.json();
+          if (salesData.invoices && Array.isArray(salesData.invoices)) {
+            const mappedSales = salesData.invoices.map((inv: any) => ({
               ...inv,
               id: inv._id,
-              type: inv.sourceInvoiceType || 'sales',
+              type: 'sales',
               saleType: inv.paymentMethod || 'cash',
-              partyName: inv.customerName,
-              phoneNo: inv.customerPhone,
+              partyName: inv.customerName || 'Customer',
+              phoneNo: inv.customerPhone || '',
               items: inv.items ? inv.items.map((item: any) => ({
-                itemName: item.productName,
+                itemName: item.productName || item.itemName,
                 quantity: item.quantity,
-                pricePerUnit: item.unitPrice,
-                amount: item.total,
-                taxPercent: item.taxRate,
-                discountAmount: item.discount,
+                pricePerUnit: item.unitPrice || item.pricePerUnit,
+                amount: item.total || item.amount,
+                taxPercent: item.taxRate || item.taxPercent,
+                discountAmount: item.discount || 0,
                 codeType: item.codeType || 'HSN',
                 hsnCode: item.hsnCode || item.sacCode || ''
               })) : [],
@@ -783,20 +786,56 @@ const AutomationInvoice = () => {
               totalSgst: inv.sgst || 0,
               totalCgst: inv.cgst || 0,
               totalIgst: inv.igst || 0,
-              total: inv.grandTotal,
-              paid: inv.amountPaid || 0,
-              balance: inv.balanceDue || 0
+              total: inv.grandTotal || inv.total,
+              paid: inv.amountPaid || inv.paid || 0,
+              balance: inv.balanceDue || inv.balance || 0
             }));
-
-            // Merge and de-duplicate by invoiceNo
-            const existingNos = new Set(mergedInvoices.map(inv => inv.invoiceNo));
-            backendInvoices.forEach((inv: InvoiceData) => {
-              if (!existingNos.has(inv.invoiceNo)) {
-                mergedInvoices.push(inv);
-              }
-            });
+            backendInvoices.push(...mappedSales);
           }
         }
+
+        if (purchaseRes && purchaseRes.ok) {
+          const purchaseData = await purchaseRes.json();
+          if (purchaseData.invoices && Array.isArray(purchaseData.invoices)) {
+            const mappedPurchases = purchaseData.invoices.map((inv: any) => ({
+              ...inv,
+              id: inv._id,
+              type: 'purchase',
+              invoiceNo: inv.billNo || `PUR-${inv._id.slice(-6)}`,
+              invoiceDate: inv.billDate || inv.createdAt,
+              partyName: inv.supplierName || inv.customerName || 'Supplier',
+              phoneNo: inv.phone || inv.customerPhone || '',
+              gstin: inv.gstin || inv.customerGstin || '',
+              items: inv.items ? inv.items.map((item: any) => ({
+                itemName: item.itemName,
+                quantity: item.quantity,
+                pricePerUnit: item.pricePerUnit,
+                amount: item.amount,
+                taxPercent: item.taxPercent,
+                discountAmount: item.discountAmount || 0,
+                codeType: item.codeType || 'HSN',
+                hsnCode: item.hsnCode || ''
+              })) : [],
+              subtotal: inv.subtotal,
+              totalTax: inv.totalTax,
+              totalSgst: inv.totalSgst || 0,
+              totalCgst: inv.totalCgst || 0,
+              totalIgst: inv.totalIgst || 0,
+              total: inv.total,
+              paid: inv.paid || 0,
+              balance: inv.balance || 0
+            }));
+            backendInvoices.push(...mappedPurchases);
+          }
+        }
+
+        // Merge and de-duplicate by invoiceNo & id
+        const existingNos = new Set(mergedInvoices.map(inv => inv.invoiceNo));
+        backendInvoices.forEach((inv: any) => {
+          if (!existingNos.has(inv.invoiceNo)) {
+            mergedInvoices.push(inv);
+          }
+        });
       } catch (err) {
         console.warn("Failed to fetch backend invoices:", err);
       }
@@ -1736,9 +1775,9 @@ const AutomationInvoice = () => {
                 case "sku":         return item.itemCode || "-";
                 case "hsn":         return item.hsnCode || "-";
                 case "quantity":    return `${item.quantity} ${item.unit || 'Pcs'}`;
-                case "rate":        return `INR ${(item.pricePerUnit || 0).toFixed(2)}`;
+                case "rate":        return formatPDFCurrency(item.pricePerUnit || 0, "INR ");
                 case "tax":         return `${item.taxPercent || 0}%`;
-                case "amount":      return `INR ${(item.amount || 0).toFixed(2)}`;
+                case "amount":      return formatPDFCurrency(item.amount || 0, "INR ");
                 default:            return "";
               }
             });
@@ -1764,7 +1803,7 @@ const AutomationInvoice = () => {
           doc.setFont("helvetica", "normal");
           doc.setFontSize(9);
           doc.text(`Subtotal:`, 130, currentY);
-          doc.text(`INR ${(data.subtotal || 0).toFixed(2)}`, 190, currentY, { align: 'right' });
+          doc.text(formatPDFCurrency(data.subtotal || 0, "INR "), 190, currentY, { align: 'right' });
           let totY = currentY + 6;
 
           const addTotalRow = (label: string, value: number, isBold = false) => {
@@ -1776,7 +1815,7 @@ const AutomationInvoice = () => {
               doc.setFontSize(10);
             }
             doc.text(label, 130, totY);
-            doc.text(`INR ${value.toFixed(2)}`, 190, totY, { align: 'right' });
+            doc.text(formatPDFCurrency(value || 0, "INR "), 190, totY, { align: 'right' });
             if (isBold) {
               doc.setTextColor(15, 23, 42);
               doc.setFont("helvetica", "normal");
@@ -1839,10 +1878,10 @@ const AutomationInvoice = () => {
           };
 
           if (payment.showPaidAmount) {
-            renderCol("Paid Amount", `INR ${(data.paid || 0).toFixed(2)}`);
+            renderCol("Paid Amount", formatPDFCurrency(data.paid || 0, "INR "));
           }
           if (payment.showBalance) {
-            renderCol("Balance Due", `INR ${(data.balance || 0).toFixed(2)}`, true, "#e11d48");
+            renderCol("Balance Due", formatPDFCurrency(data.balance || 0, "INR "), true, "#e11d48");
           }
           if (payment.showPaymentMethod && data.paymentMethod) {
             renderCol("Method", data.paymentMethod);
@@ -2208,15 +2247,31 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
     ].some(value => String(value || '').toLowerCase().includes(query));
   });
 
-  const deleteHistoryInvoice = (invoiceId?: string, invoiceNo?: string) => {
+  const deleteHistoryInvoice = async (invoiceId?: string, invoiceNo?: string, type?: string) => {
+    if (invoiceId) {
+      try {
+        const token = localStorage.getItem("token");
+        const isPurchase = type === 'purchase' || (invoiceNo && invoiceNo.startsWith('PUR'));
+        const endpoint = isPurchase ? `${API_BASE_URL}/purchase-invoice` : API_ENDPOINTS.INVOICE;
+        await fetch(`${endpoint}/${invoiceId}`, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+      } catch (err) {
+        console.error("Error deleting invoice from server:", err);
+      }
+    }
     const savedList = JSON.parse(localStorage.getItem('savedInvoices') || '[]');
     const updatedList = savedList.filter((invoice: InvoiceData & { id?: string }) => {
       if (invoiceId) return invoice.id !== invoiceId;
       return invoice.invoiceNo !== invoiceNo;
     });
     localStorage.setItem('savedInvoices', JSON.stringify(updatedList));
-    setInvoiceHistory(updatedList);
-    toast.success("Invoice deleted from history");
+    setInvoiceHistory(prev => prev.filter(inv => {
+      if (invoiceId) return (inv as any).id !== invoiceId && (inv as any)._id !== invoiceId;
+      return inv.invoiceNo !== invoiceNo;
+    }));
+    toast.success("Invoice deleted from history and server");
   };
 
   // Handle back to dashboard
@@ -4120,7 +4175,7 @@ Balance: ₹${currentInvoice.balance.toFixed(2)}`;
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => deleteHistoryInvoice((invoice as InvoiceData & { id?: string }).id, invoice.invoiceNo)}
+                            onClick={() => deleteHistoryInvoice((invoice as InvoiceData & { id?: string }).id, invoice.invoiceNo, invoice.type)}
                             className="rounded-full border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                           >
                             <Trash2 className="mr-1.5 h-4 w-4" />

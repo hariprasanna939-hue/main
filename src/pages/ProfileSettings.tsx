@@ -25,6 +25,7 @@ type UserProfile = {
   sellerGSTIN?: string;
   sellerState?: string;
   sellerAddress?: string;
+  pendingDowngradePlan?: "monthly" | "annual" | "lifetime";
 };
 
 const planLabelMap: Record<NonNullable<UserProfile["subscriptionPlan"]>, string> = {
@@ -87,6 +88,35 @@ const ProfileSettings = () => {
   const selectedPlanLabel = user?.role === "admin" ? "Admin (Unlimited)" : (user?.subscriptionPlan ? planLabelMap[user.subscriptionPlan] : "Pending");
   const subscriptionAmount = user?.role === "admin" ? "Free (Enterprise License)" : (user?.subscriptionAmount ? `₹${user.subscriptionAmount.toLocaleString("en-IN")}` : "Not set");
   const trialExpiry = user?.role === "admin" ? "Lifetime Admin Access" : getTrialExpiryLabel(user?.trialEndDate);
+
+  const handleCancelDowngrade = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/cancel-downgrade`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      if (!res.ok) throw new Error("Failed to cancel downgrade.");
+      const data = await res.json();
+      setUser(data.user);
+      await refreshUser();
+      toast({
+        title: "Downgrade Cancelled",
+        description: "Your current subscription plan will renew normally."
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Action Failed",
+        description: err.message
+      });
+    }
+  };
 
   const handleSave = () => {
     const token = localStorage.getItem("token");
@@ -317,6 +347,27 @@ const ProfileSettings = () => {
                 <p className="mt-2 text-sm font-medium text-slate-900">{subscriptionAmount}</p>
               </div>
             </div>
+
+            {user?.pendingDowngradePlan && (
+              <div className="mt-4 rounded-[22px] border border-amber-200 bg-amber-50 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex flex-col">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Downgrade Scheduled
+                  </p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Your plan will automatically change to <strong className="capitalize">{user.pendingDowngradePlan}</strong> on your next billing cycle.
+                  </p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleCancelDowngrade}
+                  className="shrink-0 bg-white border-amber-300 text-amber-900 hover:bg-amber-100"
+                >
+                  Cancel Downgrade
+                </Button>
+              </div>
+            )}
           </section>
 
           <aside className="space-y-4">
