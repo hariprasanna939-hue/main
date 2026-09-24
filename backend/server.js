@@ -12,10 +12,18 @@ import { sendResetEmail } from "./utils/emailService.js";
 import crypto from "crypto";
 
 const planKeyToName = {
+  // New plan keys
   trial: "Sandbox",
-  monthly: "Express",
-  annual: "Professional",
-  lifetime: "Enterprise"
+  basic: "Basic",
+  intermediate: "Intermediate",
+  premium: "Premium",
+  basic_annual: "Basic Annual",
+  intermediate_annual: "Intermediate Annual",
+  premium_annual: "Premium Annual",
+  // Legacy aliases
+  monthly: "Basic",
+  annual: "Intermediate Annual",
+  lifetime: "Premium"
 };
 
 import payrollRoutes from "./routes/payrollRoutes.js";
@@ -600,19 +608,78 @@ app.put("/api/user", verifyToken, async (req, res) => {
   }
 });
 
-// ✅ Subscription Plans Configuration (matching frontend)
+// ✅ Subscription Plans Configuration (must match ALL frontend plan keys)
 const subscriptionPlans = {
+  // ─── Monthly Plans ───────────────────────────────────────────
+  trial: {
+    id: "trial",
+    name: "Sandbox",
+    price: 0,
+    gst: 0,
+    totalAmount: 0,
+    duration: "trial"
+  },
+  basic: {
+    id: "basic",
+    name: "Basic",
+    price: 950,
+    gst: 171,
+    totalAmount: 1121,
+    duration: "month"
+  },
+  intermediate: {
+    id: "intermediate",
+    name: "Intermediate",
+    price: 1950,
+    gst: 351,
+    totalAmount: 2301,
+    duration: "month"
+  },
+  premium: {
+    id: "premium",
+    name: "Premium",
+    price: 4950,
+    gst: 891,
+    totalAmount: 5841,
+    duration: "month"
+  },
+  // ─── Annual Plans ────────────────────────────────────────────
+  basic_annual: {
+    id: "basic_annual",
+    name: "Basic Annual",
+    price: 9120,
+    gst: 1642,
+    totalAmount: 10762,
+    duration: "year"
+  },
+  intermediate_annual: {
+    id: "intermediate_annual",
+    name: "Intermediate Annual",
+    price: 18720,
+    gst: 3370,
+    totalAmount: 22090,
+    duration: "year"
+  },
+  premium_annual: {
+    id: "premium_annual",
+    name: "Premium Annual",
+    price: 47520,
+    gst: 8554,
+    totalAmount: 56074,
+    duration: "year"
+  },
+  // ─── Legacy aliases (kept for backward compatibility) ────────
   monthly: {
     id: "monthly",
-    name: "Monthly Subscription",
-    price: 1500,
-    gst: 270,
-    totalAmount: 1770,
+    name: "Basic",
+    price: 950,
+    gst: 171,
+    totalAmount: 1121,
     duration: "month"
   },
   annual: {
     id: "annual",
-    name: "Annual Subscription",
+    name: "Intermediate Annual",
     price: 16200,
     gst: 2916,
     totalAmount: 19116,
@@ -620,7 +687,7 @@ const subscriptionPlans = {
   },
   lifetime: {
     id: "lifetime",
-    name: "Lifetime Access",
+    name: "Premium",
     price: 45000,
     gst: 8100,
     totalAmount: 53100,
@@ -758,17 +825,22 @@ app.post("/api/verify-payment", async (req, res) => {
 
     const selectedPlan = subscriptionPlans[plan];
 
-    // Calculate subscription dates
+    // Calculate subscription dates based on plan duration
     const subscriptionStartDate = new Date();
     let subscriptionEndDate = null;
 
-    if (plan === "monthly") {
+    const planDuration = selectedPlan.duration;
+    if (planDuration === "month") {
       subscriptionEndDate = new Date(subscriptionStartDate);
       subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
-    } else if (plan === "annual") {
+    } else if (planDuration === "year") {
       subscriptionEndDate = new Date(subscriptionStartDate);
       subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
+    } else if (planDuration === "trial") {
+      subscriptionEndDate = new Date(subscriptionStartDate);
+      subscriptionEndDate.setDate(subscriptionEndDate.getDate() + 14);
     }
+    // lifetime → subscriptionEndDate stays null (no expiry)
 
     // Dev Mode Check
     const isDevOrder = process.env.DEV_MODE === "true" || razorpay_order_id?.startsWith("dev_order_");
@@ -916,17 +988,22 @@ app.post("/api/upgrade-subscription", authenticateUser, async (req, res) => {
 
     const selectedPlan = subscriptionPlans[plan];
 
-    // Calculate subscription dates
+    // Calculate subscription dates based on plan duration
     const subscriptionStartDate = new Date();
     let subscriptionEndDate = null;
 
-    if (plan === "monthly") {
+    const upgradePlanDuration = selectedPlan.duration;
+    if (upgradePlanDuration === "month") {
       subscriptionEndDate = new Date(subscriptionStartDate);
       subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
-    } else if (plan === "annual") {
+    } else if (upgradePlanDuration === "year") {
       subscriptionEndDate = new Date(subscriptionStartDate);
       subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
+    } else if (upgradePlanDuration === "trial") {
+      subscriptionEndDate = new Date(subscriptionStartDate);
+      subscriptionEndDate.setDate(subscriptionEndDate.getDate() + 14);
     }
+    // lifetime → subscriptionEndDate stays null (no expiry)
 
     // Dev Mode Check
     // Dev Mode Check
