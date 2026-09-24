@@ -342,39 +342,34 @@ app.post("/api/signin", async (req, res) => {
     }
 
     let validPass = false;
-    let authenticatedRole = "admin";
+    let authenticatedRole = role || user.role || "admin";
 
-    if (loginAs === "instore") {
-      // ── Store Staff Login: only check storePassword ──
-      if (!user.storePassword || typeof user.storePassword !== "string") {
-        return res.status(400).json({ success: false, message: "Store password not configured for this account. Please contact your admin." });
+    // 1. Check admin password first
+    if (user.password && typeof user.password === "string") {
+      const isAdminPass = await bcrypt.compare(password, user.password);
+      if (isAdminPass) {
+        validPass = true;
+        authenticatedRole = role || user.role || "admin";
       }
+    }
+
+    // 2. If admin pass didn't match, check store password
+    if (!validPass && user.storePassword && typeof user.storePassword === "string") {
       const isStorePass = await bcrypt.compare(password, user.storePassword);
       if (isStorePass) {
         validPass = true;
         authenticatedRole = "instore";
-      } else {
-        return res.status(400).json({ success: false, message: "Invalid store password" });
       }
-    } else {
-      // ── Admin Login: only check admin password ──
-      if (user.password && typeof user.password === "string") {
-        const isAdminPass = await bcrypt.compare(password, user.password);
-        if (isAdminPass) {
-          validPass = true;
-          authenticatedRole = role || user.role || "admin";
-        }
-      }
+    }
 
-      if (!validPass) {
-        if (isDevOrInMemory) {
-          console.log(`🔑 Updating password for user: ${cleanEmail}`);
-          user.password = await bcrypt.hash(password, 10);
-          await user.save();
-          validPass = true;
-        } else {
-          return res.status(400).json({ success: false, message: "Invalid email or password" });
-        }
+    if (!validPass) {
+      if (isDevOrInMemory) {
+        console.log(`🔑 Updating password for user: ${cleanEmail}`);
+        user.password = await bcrypt.hash(password, 10);
+        await user.save();
+        validPass = true;
+      } else {
+        return res.status(400).json({ success: false, message: "Invalid email or password" });
       }
     }
 
