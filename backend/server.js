@@ -301,7 +301,7 @@ app.post("/api/signup-trial", async (req, res) => {
 // ✅ LOGIN (Sign In)
 app.post("/api/signin", async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password, role, loginAs } = req.body;
 
     if (!email || !password)
       return res.status(400).json({ success: false, message: "Email and password are required" });
@@ -342,34 +342,39 @@ app.post("/api/signin", async (req, res) => {
     }
 
     let validPass = false;
-    let authenticatedRole = role || user.role || "admin";
+    let authenticatedRole = "admin";
 
-    // 1. First check if password matches Admin Password
-    if (user.password && typeof user.password === "string") {
-      const isAdminPass = await bcrypt.compare(password, user.password);
-      if (isAdminPass) {
-        validPass = true;
-        authenticatedRole = role || user.role || "admin";
+    if (loginAs === "instore") {
+      // ── Store Staff Login: only check storePassword ──
+      if (!user.storePassword || typeof user.storePassword !== "string") {
+        return res.status(400).json({ success: false, message: "Store password not configured for this account. Please contact your admin." });
       }
-    }
-
-    if (!validPass && user.storePassword && typeof user.storePassword === "string") {
-      // 2. Next check if password matches Store Password
       const isStorePass = await bcrypt.compare(password, user.storePassword);
       if (isStorePass) {
         validPass = true;
         authenticatedRole = "instore";
-      }
-    }
-
-    if (!validPass) {
-      if (isDevOrInMemory) {
-        console.log(`🔑 Updating password for user: ${cleanEmail}`);
-        user.password = await bcrypt.hash(password, 10);
-        await user.save();
-        validPass = true;
       } else {
-        return res.status(400).json({ success: false, message: "Invalid email or password" });
+        return res.status(400).json({ success: false, message: "Invalid store password" });
+      }
+    } else {
+      // ── Admin Login: only check admin password ──
+      if (user.password && typeof user.password === "string") {
+        const isAdminPass = await bcrypt.compare(password, user.password);
+        if (isAdminPass) {
+          validPass = true;
+          authenticatedRole = role || user.role || "admin";
+        }
+      }
+
+      if (!validPass) {
+        if (isDevOrInMemory) {
+          console.log(`🔑 Updating password for user: ${cleanEmail}`);
+          user.password = await bcrypt.hash(password, 10);
+          await user.save();
+          validPass = true;
+        } else {
+          return res.status(400).json({ success: false, message: "Invalid email or password" });
+        }
       }
     }
 

@@ -337,6 +337,7 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [showStorePassword, setShowStorePassword] = useState(false);
+  const [isStoreLogin, setIsStoreLogin] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -393,7 +394,7 @@ const Auth = () => {
     try {
       const res = await apiRequest(API_ENDPOINTS.SIGNIN, {
         method: "POST",
-        body: JSON.stringify({ email: cleanedEmail, password }),
+        body: JSON.stringify({ email: cleanedEmail, password, loginAs: isStoreLogin ? "instore" : "admin" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Invalid email or password.");
@@ -654,12 +655,46 @@ const Auth = () => {
                     {view === "signin" ? (
                       /* --- SIGN IN FORM --- */
                       <div className="flex flex-col h-full">
-                        <div className="mb-8">
+                        <div className="mb-6">
                           <h1 className="text-[30px] font-bold text-[#0f172a] tracking-tight mb-2">Welcome back</h1>
                           <p className="text-[15px] text-[#64748b] font-medium">Sign in to your account to manage your business ledgers.</p>
                         </div>
+
+                        {/* Login Type Toggle */}
+                        <div className="flex gap-2 mb-6 p-1.5 bg-[#f1f5f9] rounded-xl">
+                          <button
+                            type="button"
+                            onClick={() => { setIsStoreLogin(false); setError(""); setPassword(""); }}
+                            className={`flex-1 py-2.5 rounded-[9px] text-[13px] font-bold transition-all duration-200 ${
+                              !isStoreLogin
+                                ? "bg-[#0f172a] text-white shadow-sm"
+                                : "text-[#64748b] hover:text-[#0f172a]"
+                            }`}
+                          >
+                            Admin Login
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setIsStoreLogin(true); setError(""); setPassword(""); }}
+                            className={`flex-1 py-2.5 rounded-[9px] text-[13px] font-bold transition-all duration-200 ${
+                              isStoreLogin
+                                ? "bg-[#3b82f6] text-white shadow-sm"
+                                : "text-[#64748b] hover:text-[#0f172a]"
+                            }`}
+                          >
+                            Store Staff Login
+                          </button>
+                        </div>
+
+                        {isStoreLogin && (
+                          <div className="mb-5 p-3 rounded-xl bg-blue-50 border border-blue-200 flex items-start gap-2.5 text-blue-700 text-sm">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+                            <span>Enter the admin email and your <strong>store password</strong> to login as Store Staff.</span>
+                          </div>
+                        )}
+
                         {error && (
-                          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-600 text-sm font-medium">
+                          <div className="mb-5 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-600 text-sm font-medium">
                             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-500" />
                             <span>{error}</span>
                           </div>
@@ -675,12 +710,25 @@ const Auth = () => {
                           </div>
                           <div>
                             <div className="flex justify-between items-center mb-2">
-                              <label className="block text-[13px] font-bold text-[#333] uppercase tracking-wide">Password</label>
-                              <a href="#" className="text-[13px] font-semibold text-[#3b82f6] hover:text-[#2563eb]">Forgot password?</a>
+                              <label className="block text-[13px] font-bold text-[#333] uppercase tracking-wide">
+                                {isStoreLogin ? "Store Password" : "Password"}
+                              </label>
+                              {!isStoreLogin && <a href="#" className="text-[13px] font-semibold text-[#3b82f6] hover:text-[#2563eb]">Forgot password?</a>}
                             </div>
                             <div className="relative flex items-center">
                               <Lock className="absolute left-3.5 w-[18px] h-[18px] text-[#94a3b8]" />
-                              <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} className="w-full h-12 pl-10 pr-10 bg-white border border-[#cbd5e1] rounded-[10px] text-[15px] focus:border-[#3b82f6] focus:ring-4 focus:ring-[#3b82f6]/10 outline-none transition-all placeholder:text-[#94a3b8]" placeholder="••••••••" required />
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                value={password}
+                                onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                                className={`w-full h-12 pl-10 pr-10 bg-white border rounded-[10px] text-[15px] outline-none transition-all placeholder:text-[#94a3b8] ${
+                                  isStoreLogin
+                                    ? "border-[#3b82f6] focus:border-[#2563eb] focus:ring-4 focus:ring-[#3b82f6]/10"
+                                    : "border-[#cbd5e1] focus:border-[#3b82f6] focus:ring-4 focus:ring-[#3b82f6]/10"
+                                }`}
+                                placeholder={isStoreLogin ? "Enter store password" : "••••••••"}
+                                required
+                              />
                               <button
                                 type="button"
                                 onClick={() => setShowPassword(!showPassword)}
@@ -691,8 +739,16 @@ const Auth = () => {
                               </button>
                             </div>
                           </div>
-                          <button type="submit" disabled={loading} className="w-full h-12 mt-6 bg-[#0f172a] hover:bg-[#1e293b] text-white font-semibold text-[15px] rounded-[10px] transition-colors flex items-center justify-center gap-2 shadow-sm">
-                            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+                          <button
+                            type="submit"
+                            disabled={loading}
+                            className={`w-full h-12 mt-6 text-white font-semibold text-[15px] rounded-[10px] transition-colors flex items-center justify-center gap-2 shadow-sm ${
+                              isStoreLogin
+                                ? "bg-[#3b82f6] hover:bg-[#2563eb]"
+                                : "bg-[#0f172a] hover:bg-[#1e293b]"
+                            }`}
+                          >
+                            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{isStoreLogin ? "Login as Store Staff" : "Sign In"} <ArrowRight className="w-4 h-4" /></>}
                           </button>
                         </form>
                       </div>
